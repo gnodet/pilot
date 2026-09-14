@@ -19,12 +19,14 @@
 package eu.maveniverse.maven.pilot.mvn3;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import eu.maveniverse.maven.pilot.ConflictsTui;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.maven.plugin.MojoExecutionException;
 import org.eclipse.aether.artifact.DefaultArtifact;
 import org.eclipse.aether.graph.DefaultDependencyNode;
 import org.eclipse.aether.graph.Dependency;
@@ -33,6 +35,100 @@ import org.eclipse.aether.util.graph.manager.DependencyManagerUtils;
 import org.junit.jupiter.api.Test;
 
 class ConflictsMojoTest {
+
+    // --- action validation ---
+
+    @Test
+    void defaultActionIsTui() {
+        var mojo = new ConflictsMojo();
+        assertThat(mojo.action).isEqualTo("tui");
+    }
+
+    @Test
+    void rejectsFixAction() {
+        var mojo = new ConflictsMojo();
+        mojo.action = "fix";
+        assertThatThrownBy(mojo::execute)
+                .isInstanceOf(MojoExecutionException.class)
+                .hasMessageContaining("fix")
+                .hasMessageContaining("not supported");
+    }
+
+    @Test
+    void rejectsInvalidAction() {
+        var mojo = new ConflictsMojo();
+        mojo.action = "bogus";
+        assertThatThrownBy(mojo::execute)
+                .isInstanceOf(MojoExecutionException.class)
+                .hasMessageContaining("Invalid action 'bogus'");
+    }
+
+    @Test
+    void acceptsValidActions() {
+        for (String a : List.of("tui", "report", "check")) {
+            var mojo = new ConflictsMojo();
+            mojo.action = a;
+            assertThat(mojo.action).isEqualTo(a);
+        }
+    }
+
+    // --- resolveAction / headless fallback ---
+
+    @Test
+    void resolveActionSwitchesTuiToReportWhenHeadless() {
+        var mojo = new ConflictsMojo() {
+            @Override
+            boolean isHeadless() {
+                return true;
+            }
+        };
+        assertThat(mojo.action).isEqualTo("tui");
+
+        mojo.resolveAction();
+
+        assertThat(mojo.action)
+                .as("tui must be rerouted to report in headless environments")
+                .isEqualTo("report");
+    }
+
+    @Test
+    void resolveActionPreservesExplicitActionsWhenHeadless() {
+        for (String a : List.of("check", "report")) {
+            var mojo = new ConflictsMojo() {
+                @Override
+                boolean isHeadless() {
+                    return true;
+                }
+            };
+            mojo.action = a;
+            mojo.resolveAction();
+            assertThat(mojo.action).as("action=%s must not be mutated", a).isEqualTo(a);
+        }
+    }
+
+    @Test
+    void resolveActionPreservesTuiWhenInteractive() {
+        var mojo = new ConflictsMojo() {
+            @Override
+            boolean isHeadless() {
+                return false;
+            }
+        };
+        mojo.resolveAction();
+        assertThat(mojo.action).isEqualTo("tui");
+    }
+
+    @Test
+    void isHeadlessTrueWhenNoConsole() {
+        assertThat(System.console()).isNull();
+        var mojo = new ConflictsMojo() {
+            @Override
+            boolean isHeadless() {
+                return System.console() == null;
+            }
+        };
+        assertThat(mojo.isHeadless()).isTrue();
+    }
 
     // --- collectConflicts: dependency-management version override detection ---
 

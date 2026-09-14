@@ -131,7 +131,7 @@ public class TreeMojo extends AbstractMojo {
             DependencyTreeModel filtered = treeModel.filterByScope(scope);
             StringBuilder sb = new StringBuilder();
             sb.append(gav).append("\n");
-            renderTextTree(filtered.root, sb, "", true);
+            renderTextTree(filtered.root, sb, "");
             getLog().info(sb.toString());
         } else {
             TreeTui tui = new TreeTui(treeModel, scope, gav);
@@ -143,24 +143,24 @@ public class TreeMojo extends AbstractMojo {
      * Renders a dependency node and its children as a plain-text tree using box-drawing characters,
      * matching the style of {@code dependency:tree}.
      */
-    private void renderTextTree(DependencyTreeModel.TreeNode node, StringBuilder sb, String prefix, boolean isRoot) {
+    private void renderTextTree(DependencyTreeModel.TreeNode node, StringBuilder sb, String prefix) {
         for (int i = 0; i < node.children.size(); i++) {
             DependencyTreeModel.TreeNode child = node.children.get(i);
             boolean last = (i == node.children.size() - 1);
             String connector = last ? "\\- " : "+- ";
             sb.append(prefix).append(connector).append(formatNode(child)).append("\n");
             String childPrefix = prefix + (last ? "   " : "|  ");
-            renderTextTree(child, sb, childPrefix, false);
+            renderTextTree(child, sb, childPrefix);
         }
     }
 
     private String formatNode(DependencyTreeModel.TreeNode node) {
         StringBuilder sb = new StringBuilder();
-        sb.append(node.groupId)
-                .append(":")
-                .append(node.artifactId)
-                .append(":jar:")
-                .append(node.version);
+        sb.append(node.groupId).append(":").append(node.artifactId).append(":jar");
+        if (node.classifier != null && !node.classifier.isEmpty()) {
+            sb.append(":").append(node.classifier);
+        }
+        sb.append(":").append(node.version);
         if (node.scope != null && !node.scope.isEmpty() && !"compile".equals(node.scope)) {
             sb.append(":").append(node.scope);
         }

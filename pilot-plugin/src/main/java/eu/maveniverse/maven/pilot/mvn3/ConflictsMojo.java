@@ -195,7 +195,7 @@ public class ConflictsMojo extends AbstractMojo {
         if ("check".equals(action)) {
             throw new MojoFailureException(sb.toString());
         } else {
-            getLog().warn(sb.toString());
+            getLog().info(sb.toString());
         }
     }
 

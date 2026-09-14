@@ -111,11 +111,7 @@ public class DependenciesMojo extends AbstractMojo {
             throw new MojoExecutionException(
                     "Invalid action '" + action + "'. Use 'tui', 'report', 'check', or 'fix'.");
         }
-        if ("tui".equals(action) && isHeadless()) {
-            getLog().info("Non-interactive environment detected; falling back to action=report"
-                    + " (use -Dpilot.action=report to suppress this message).");
-            action = "report";
-        }
+        resolveAction();
         try {
             executeForProject(project);
         } catch (MojoFailureException e) {
@@ -315,6 +311,19 @@ public class DependenciesMojo extends AbstractMojo {
 
     static Set<String> buildIgnoreSet(List<String> patterns) {
         return patterns != null && !patterns.isEmpty() ? new HashSet<>(patterns) : Set.of();
+    }
+
+    /**
+     * Resolves the effective action: if the action is the default {@code tui} but the
+     * environment is headless (no interactive Maven session or no TTY), silently falls back
+     * to {@code report} and logs an informational message.
+     */
+    void resolveAction() {
+        if ("tui".equals(action) && isHeadless()) {
+            getLog().info("Non-interactive environment detected; falling back to action=report"
+                    + " (use -Dpilot.action=report to suppress this message).");
+            action = "report";
+        }
     }
 
     /**

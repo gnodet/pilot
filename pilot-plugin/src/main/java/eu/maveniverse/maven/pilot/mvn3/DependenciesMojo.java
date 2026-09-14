@@ -111,6 +111,11 @@ public class DependenciesMojo extends AbstractMojo {
             throw new MojoExecutionException(
                     "Invalid action '" + action + "'. Use 'tui', 'report', 'check', or 'fix'.");
         }
+        if ("tui".equals(action) && isHeadless()) {
+            getLog().info("Non-interactive environment detected; falling back to action=report"
+                    + " (use -Dpilot.action=report to suppress this message).");
+            action = "report";
+        }
         try {
             executeForProject(project);
         } catch (MojoFailureException e) {
@@ -310,6 +315,15 @@ public class DependenciesMojo extends AbstractMojo {
 
     static Set<String> buildIgnoreSet(List<String> patterns) {
         return patterns != null && !patterns.isEmpty() ? new HashSet<>(patterns) : Set.of();
+    }
+
+    /**
+     * Returns {@code true} when running in a non-interactive (headless) environment:
+     * either Maven was started with {@code --batch-mode} / {@code -B}, or no TTY is attached
+     * ({@code System.console() == null}).
+     */
+    boolean isHeadless() {
+        return !session.getRequest().isInteractiveMode() || System.console() == null;
     }
 
     private static final Set<String> TEST_SCOPES = Set.of("test", "test-only", "test-runtime");

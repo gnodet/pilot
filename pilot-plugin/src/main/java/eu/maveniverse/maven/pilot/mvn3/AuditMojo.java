@@ -83,6 +83,11 @@ public class AuditMojo extends AbstractMojo {
         if (!"tui".equals(action) && !"report".equals(action) && !"check".equals(action)) {
             throw new MojoExecutionException("Invalid action '" + action + "'. Use 'tui', 'report', or 'check'.");
         }
+        if ("tui".equals(action) && isHeadless()) {
+            getLog().info("Non-interactive environment detected; falling back to action=report"
+                    + " (use -Dpilot.action=report to suppress this message).");
+            action = "report";
+        }
         try {
             List<MavenProject> projects = session.getProjects();
             Map<String, AuditTui.AuditEntry> entryMap = new LinkedHashMap<>();
@@ -161,5 +166,13 @@ public class AuditMojo extends AbstractMojo {
         for (DependencyNode child : node.getChildren()) {
             collectEntries(child, entryMap, moduleName, false);
         }
+    }
+    /**
+     * Returns {@code true} when running in a non-interactive (headless) environment:
+     * either Maven was started with {@code --batch-mode} / {@code -B}, or no TTY is attached
+     * ({@code System.console() == null}).
+     */
+    boolean isHeadless() {
+        return !session.getRequest().isInteractiveMode() || System.console() == null;
     }
 }

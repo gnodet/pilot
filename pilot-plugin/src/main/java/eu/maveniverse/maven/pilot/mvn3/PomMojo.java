@@ -50,9 +50,18 @@ import org.eclipse.aether.resolution.ArtifactRequest;
 /**
  * Interactive POM viewer with syntax highlighting and effective POM comparison.
  *
+ * <p>Two actions via {@code -Dpilot.action}:</p>
+ * <ul>
+ *   <li><b>tui</b> (default) — interactive TUI with syntax highlighting and effective POM comparison</li>
+ *   <li><b>report</b> — prints the raw POM XML and exits 0</li>
+ * </ul>
+ *
+ * <p>{@code check} and {@code fix} are not meaningful for a POM viewer and will throw an error.</p>
+ *
  * <p>Usage:</p>
  * <pre>
  * mvn pilot:pom
+ * mvn pilot:pom -Dpilot.action=report
  * </pre>
  *
  * @since 0.1.0
@@ -72,17 +81,63 @@ public class PomMojo extends AbstractMojo {
     @Inject
     private RepositorySystem repoSystem;
 
+    /**
+     * Action to perform: {@code tui} (default) launches the interactive TUI;
+     * {@code report} prints the raw POM XML as plain text.
+     * {@code check} and {@code fix} are not supported and will fail.
+     */
+    @Parameter(property = "pilot.action", defaultValue = "tui")
+    String action = "tui";
+
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
+        if (!("tui".equals(action) || "report".equals(action) || "check".equals(action) || "fix".equals(action))) {
+            throw new MojoExecutionException(
+                    "Invalid action '" + action + "'. Use 'tui' or 'report' (check/fix are not supported for pom).");
+        }
+        if ("check".equals(action) || "fix".equals(action)) {
+            throw new MojoExecutionException(
+                    "Action '" + action + "' is not supported for pilot:pom — use 'tui' or 'report'.");
+        }
+        resolveAction();
         try {
             executeForProject(project);
+        } catch (MojoExecutionException | MojoFailureException e) {
+            throw e;
         } catch (Exception e) {
             throw new MojoExecutionException("Failed to display POM: " + e.getMessage(), e);
         }
     }
 
+    /**
+     * Falls back from {@code tui} to {@code report} in non-interactive environments.
+     * Package-private for testing.
+     */
+    void resolveAction() {
+        if ("tui".equals(action) && isHeadless()) {
+            getLog().info("Non-interactive environment detected; falling back to action=report"
+                    + " (use -Dpilot.action=report to suppress this message).");
+            action = "report";
+        }
+    }
+
+    /**
+     * Returns true when the environment has no interactive terminal.
+     * Package-private for testing.
+     */
+    boolean isHeadless() {
+        return !session.getRequest().isInteractiveMode() || System.console() == null;
+    }
+
     private void executeForProject(MavenProject proj) throws Exception {
         File pomFile = proj.getFile();
+
+        if ("report".equals(action)) {
+            String rawPom = Files.readString(pomFile.toPath());
+            getLog().info(rawPom);
+            return;
+        }
+
         String rawPom = Files.readString(pomFile.toPath());
         String[] rawLines = rawPom.split("\n");
 

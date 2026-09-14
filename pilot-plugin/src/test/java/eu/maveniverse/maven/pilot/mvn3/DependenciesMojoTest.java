@@ -111,4 +111,76 @@ class DependenciesMojoTest {
         var analyzer = mojo.buildAnalyzer();
         assertThat(analyzer).isNotNull();
     }
+    // --- isHeadless / resolveAction ---
+
+    /**
+     * isHeadless() returns true when System.console() is null (no TTY), which is always the
+     * case in CI/test environments. We override isHeadless() to only check the console branch
+     * so we can call it without a live MavenSession.
+     */
+    @Test
+    void isHeadlessTrueWhenNoConsole() {
+        assertThat(System.console()).isNull();
+        var mojo = new DependenciesMojo(null) {
+            @Override
+            boolean isHeadless() {
+                return System.console() == null;
+            }
+        };
+        assertThat(mojo.isHeadless()).isTrue();
+    }
+
+    /**
+     * resolveAction() is the production method called by execute(). When action=tui and
+     * isHeadless() returns true, it must mutate the field to "report" in-place.
+     * We call the real resolveAction() directly — no guard duplication in the test.
+     */
+    @Test
+    void resolveActionSwitchesTuiToReportWhenHeadless() {
+        var mojo = new DependenciesMojo(null) {
+            @Override
+            boolean isHeadless() {
+                return true;
+            }
+        };
+        assertThat(mojo.action).isEqualTo("tui");
+
+        mojo.resolveAction(); // real production method
+
+        assertThat(mojo.action)
+                .as("tui must be rerouted to report in headless environments")
+                .isEqualTo("report");
+    }
+
+    /**
+     * resolveAction() must leave explicitly chosen actions (check, report, fix) unchanged
+     * even in headless environments — the user made an intentional choice.
+     */
+    @Test
+    void resolveActionPreservesExplicitHeadlessActions() {
+        for (String a : List.of("check", "report", "fix")) {
+            var mojo = new DependenciesMojo(null) {
+                @Override
+                boolean isHeadless() {
+                    return true;
+                }
+            };
+            mojo.action = a;
+            mojo.resolveAction(); // real production method
+            assertThat(mojo.action).as("action=%s must not be mutated", a).isEqualTo(a);
+        }
+    }
+
+    /** resolveAction() must not switch tui to report when the environment is interactive. */
+    @Test
+    void resolveActionPreservesTuiWhenInteractive() {
+        var mojo = new DependenciesMojo(null) {
+            @Override
+            boolean isHeadless() {
+                return false;
+            }
+        };
+        mojo.resolveAction(); // real production method
+        assertThat(mojo.action).isEqualTo("tui");
+    }
 }

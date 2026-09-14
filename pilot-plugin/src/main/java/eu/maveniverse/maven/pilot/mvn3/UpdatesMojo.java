@@ -89,6 +89,7 @@ public class UpdatesMojo extends AbstractMojo {
             throw new MojoExecutionException(
                     "Invalid action '" + action + "'. Use 'tui', 'report', 'check', or 'fix'.");
         }
+        resolveAction();
         try {
             UpdatesTui.VersionResolver versionResolver = createVersionResolver();
             List<PilotProject> projects = MojoHelper.toPilotProjects(session.getProjects());
@@ -144,5 +145,25 @@ public class UpdatesMojo extends AbstractMojo {
                 throw new IllegalStateException("Failed to resolve versions for " + groupId + ":" + artifactId, e);
             }
         };
+    }
+    /**
+     * Resolves the effective action: if the action is the default {@code tui} but the
+     * environment is headless, silently falls back to {@code report}.
+     */
+    void resolveAction() {
+        if ("tui".equals(action) && isHeadless()) {
+            getLog().info("Non-interactive environment detected; falling back to action=report"
+                    + " (use -Dpilot.action=report to suppress this message).");
+            action = "report";
+        }
+    }
+
+    /**
+     * Returns {@code true} when running in a non-interactive (headless) environment:
+     * either Maven was started with {@code --batch-mode} / {@code -B}, or no TTY is attached
+     * ({@code System.console() == null}).
+     */
+    boolean isHeadless() {
+        return !session.getRequest().isInteractiveMode() || System.console() == null;
     }
 }

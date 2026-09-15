@@ -101,7 +101,13 @@ public class PomMojo extends AbstractMojo {
         }
         resolveAction();
         try {
-            executeForProject(project);
+            if ("report".equals(action)) {
+                for (MavenProject proj : session.getProjects()) {
+                    executeForProject(proj);
+                }
+            } else {
+                executeForProject(project);
+            }
         } catch (MojoExecutionException | MojoFailureException e) {
             throw e;
         } catch (Exception e) {

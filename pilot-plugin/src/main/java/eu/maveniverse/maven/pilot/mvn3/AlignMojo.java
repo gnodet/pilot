@@ -110,7 +110,13 @@ public class AlignMojo extends AbstractMojo {
         }
         resolveAction();
         try {
-            executeForProject(project);
+            if ("report".equals(action) || "check".equals(action) || "fix".equals(action)) {
+                for (MavenProject proj : session.getProjects()) {
+                    executeForProject(proj);
+                }
+            } else {
+                executeForProject(project);
+            }
         } catch (MojoExecutionException | MojoFailureException e) {
             throw e;
         } catch (Exception e) {

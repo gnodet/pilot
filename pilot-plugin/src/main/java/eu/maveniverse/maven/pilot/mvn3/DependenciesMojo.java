@@ -113,7 +113,13 @@ public class DependenciesMojo extends AbstractMojo {
         }
         resolveAction();
         try {
-            executeForProject(project);
+            if ("report".equals(action) || "check".equals(action) || "fix".equals(action)) {
+                for (MavenProject proj : session.getProjects()) {
+                    executeForProject(proj);
+                }
+            } else {
+                executeForProject(project);
+            }
         } catch (MojoFailureException e) {
             throw e;
         } catch (Exception e) {
@@ -122,6 +128,10 @@ public class DependenciesMojo extends AbstractMojo {
     }
 
     private void executeForProject(MavenProject proj) throws Exception {
+        if ("pom".equals(proj.getPackaging())) {
+            getLog().debug("Skipping " + proj.getArtifactId() + " (pom packaging, no classes to analyse).");
+            return;
+        }
         Set<String> declaredGAs = new HashSet<>();
         List<DependenciesTui.DepEntry> declared = new ArrayList<>();
         for (Dependency dep : proj.getDependencies()) {

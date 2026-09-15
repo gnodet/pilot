@@ -347,8 +347,7 @@ class PluginsTuiRenderTest {
         tui.setActiveSubView(2);
 
         String output = TuiTestHelper.render(tui::renderStandalone);
-        assertThat(output).contains("maven-compiler-plugin");
-        assertThat(output).contains("3.11.0");
+        assertThat(output).contains("maven-compiler-plugin").contains("3.11.0");
     }
 
     @Test
@@ -418,8 +417,7 @@ class PluginsTuiRenderTest {
 
         // Status should include match count
         String status = tui.status();
-        assertThat(status).isNotNull();
-        assertThat(status).contains("match");
+        assertThat(status).isNotNull().contains("match");
     }
 
     @Test
@@ -628,8 +626,7 @@ class PluginsTuiRenderTest {
         tui.loading = false;
 
         String output = TuiTestHelper.render(tui::renderStandalone);
-        assertThat(output).contains("maven-compiler-plugin");
-        assertThat(output).contains("maven-surefire-plugin");
+        assertThat(output).contains("maven-compiler-plugin").contains("maven-surefire-plugin");
     }
 
     @Test

@@ -41,8 +41,10 @@ import java.util.logging.Logger;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.apache.maven.api.DownloadedArtifact;
 import org.apache.maven.api.Session;
+import org.apache.maven.api.model.Dependency;
 import org.apache.maven.api.model.Model;
 import org.apache.maven.api.model.Parent;
+import org.apache.maven.api.model.Plugin;
 import org.apache.maven.api.services.ArtifactResolver;
 import org.apache.maven.api.services.ArtifactResolverRequest;
 import org.apache.maven.api.services.ModelBuilder;
@@ -559,7 +561,7 @@ public class PilotMain {
                 .toList();
     }
 
-    private static PilotProject.Plugin modelPluginToPilotPlugin(org.apache.maven.api.model.Plugin plugin) {
+    private static PilotProject.Plugin modelPluginToPilotPlugin(Plugin plugin) {
         List<PilotProject.Dep> deps = plugin.getDependencies() != null
                 ? plugin.getDependencies().stream()
                         .map(PilotMain::modelDepToPilotDep)
@@ -569,7 +571,7 @@ public class PilotMain {
                 plugin.getGroupId(), plugin.getArtifactId(), plugin.getVersion(), deps, List.of());
     }
 
-    private static PilotProject.Dep modelDepToPilotDep(org.apache.maven.api.model.Dependency dep) {
+    private static PilotProject.Dep modelDepToPilotDep(Dependency dep) {
         List<PilotProject.Excl> exclusions = dep.getExclusions() != null
                 ? dep.getExclusions().stream()
                         .map(e -> new PilotProject.Excl(e.getGroupId(), e.getArtifactId()))

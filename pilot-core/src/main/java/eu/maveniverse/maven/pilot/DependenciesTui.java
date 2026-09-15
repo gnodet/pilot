@@ -762,7 +762,8 @@ public class DependenciesTui extends ToolPanel {
 
                 ## Dependencies Actions
                 ↑ / ↓           Move selection up / down
-                1-4             Switch Declared / Transitive / Managed view
+                1-""" + views.length + """
+             Switch Declared / Transitive / Managed view
                 x / Enter       Remove selected (Declared view)
                 a / Enter       Add to POM (Transitive view)
                 x               Remove managed entry (Managed view)
@@ -778,6 +779,9 @@ public class DependenciesTui extends ToolPanel {
         if (treeTui != null) {
             treeTui.close();
         }
+        if (dmTreeTui != null) {
+            dmTreeTui.close();
+        }
     }
 
     @Override
@@ -786,6 +790,9 @@ public class DependenciesTui extends ToolPanel {
         if (treeTui != null) {
             treeTui.setRunner(runner);
         }
+        if (dmTreeTui != null) {
+            dmTreeTui.setRunner(runner);
+        }
     }
 
     @Override
@@ -793,6 +800,9 @@ public class DependenciesTui extends ToolPanel {
         super.setFocused(focused);
         if (treeTui != null) {
             treeTui.setFocused(focused);
+        }
+        if (dmTreeTui != null) {
+            dmTreeTui.setFocused(focused);
         }
     }
 
@@ -1175,7 +1185,8 @@ public class DependenciesTui extends ToolPanel {
         sections.addAll(HelpOverlay.parse("""
                 ## General
                 """ + NAV_KEYS + """
-                1-4             Switch between Declared, Transitive, and Managed views
+                1-""" + views.length + """
+             Switch between Declared, Transitive, and Managed views
                 d               Preview POM changes as a unified diff
                 h               Toggle this help screen
                 q / Esc         Quit (prompts to save if modified)

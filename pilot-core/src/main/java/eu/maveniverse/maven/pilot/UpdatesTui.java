@@ -1019,19 +1019,55 @@ public class UpdatesTui extends ToolPanel {
         Integer sel = tableState.selected();
         if (sel == null || sel >= displayRows.size()) return;
         ReactorRow row = displayRows.get(sel);
-        if (row.dependency == null || row.dependency.newestVersion == null) {
-            status = "No update available for tree impact";
-            return;
+
+        // For group headers, pick the first dependency that has an update
+        ReactorCollector.AggregatedDependency dep;
+        String label;
+        if (row.isGroupHeader()) {
+            ReactorCollector.PropertyGroup pg = row.propertyGroup;
+            if (!pg.hasUpdate()) {
+                status = "No update available for tree impact";
+                return;
+            }
+            dep = pg.dependencies.stream()
+                    .filter(d -> d.newestVersion != null)
+                    .findFirst()
+                    .orElse(null);
+            if (dep == null) {
+                status = "No dependency in group has a resolved update";
+                return;
+            }
+            label = "${" + pg.propertyName + "} " + pg.resolvedVersion + " → " + pg.newestVersion;
+        } else {
+            if (row.dependency == null || row.dependency.newestVersion == null) {
+                status = "No update available for tree impact";
+                return;
+            }
+            dep = row.dependency;
+            label = dep.ga() + " " + dep.primaryVersion + " → " + dep.newestVersion;
         }
-        var dep = row.dependency;
-        List<TreeDiff.DiffEntry> entries =
-                treeImpactResolver.computeImpact(dep.groupId, dep.artifactId, dep.primaryVersion, dep.newestVersion);
-        if (entries.isEmpty() || entries.stream().allMatch(e -> e.side() == TreeDiff.Side.SAME)) {
-            status = "No transitive changes for " + dep.ga() + " " + dep.primaryVersion + " → " + dep.newestVersion;
-            return;
-        }
-        treeImpactOverlay.openTreeImpact(entries);
-        status = "Tree impact: " + dep.ga() + " " + dep.primaryVersion + " → " + dep.newestVersion;
+
+        final var finalDep = dep;
+        final var finalLabel = label;
+        status = "Computing tree impact for " + finalLabel + "…";
+        CompletableFuture.supplyAsync(
+                        () -> treeImpactResolver.computeImpact(
+                                finalDep.groupId, finalDep.artifactId, finalDep.primaryVersion, finalDep.newestVersion),
+                        httpPool)
+                .thenAccept(entries -> runner.runOnRenderThread(() -> {
+                    if (entries.isEmpty() || entries.stream().allMatch(e -> e.side() == TreeDiff.Side.SAME)) {
+                        status = "No transitive changes for " + finalLabel;
+                    } else {
+                        treeImpactOverlay.openTreeImpact(entries);
+                        status = "Tree impact: " + finalLabel;
+                    }
+                }))
+                .exceptionally(ex -> {
+                    runner.runOnRenderThread(() -> {
+                        status = "Tree impact failed for " + finalLabel + ": " + ex.getMessage();
+                    });
+                    return null;
+                });
     }
 
     // -- Apply --
@@ -1490,10 +1526,8 @@ public class UpdatesTui extends ToolPanel {
     private void buildDiffKeyHints(List<Span> spans) {
         spans.add(Span.raw("↑↓").bold());
         spans.add(Span.raw(":Scroll  "));
-        spans.add(Span.raw("Esc").bold());
-        spans.add(Span.raw(":Close  "));
-        spans.add(Span.raw("q").bold());
-        spans.add(Span.raw(":Quit"));
+        spans.add(Span.raw("Esc / q").bold());
+        spans.add(Span.raw(":Close"));
     }
 
     private void buildDepsKeyHints(List<Span> spans) {

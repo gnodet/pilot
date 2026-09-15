@@ -42,6 +42,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -58,6 +59,9 @@ public class PluginsTui extends ToolPanel {
         final String artifactId;
         String version;
         final List<String> modules = new ArrayList<>();
+        /** Per-module version: module name → declared version (null if inherited/absent). */
+        final Map<String, String> moduleVersions = new LinkedHashMap<>();
+
         String newestVersion;
         VersionComparator.UpdateType updateType;
         LocalDate currentReleaseDate;
@@ -82,6 +86,15 @@ public class PluginsTui extends ToolPanel {
 
         boolean hasUpdate() {
             return newestVersion != null && !newestVersion.isEmpty() && !newestVersion.equals(version);
+        }
+
+        /** Returns true if different modules declare different versions for this plugin. */
+        boolean hasVersionConflict() {
+            return moduleVersions.values().stream()
+                            .filter(v -> v != null && !v.isEmpty())
+                            .distinct()
+                            .count()
+                    > 1;
         }
     }
 
@@ -161,6 +174,7 @@ public class PluginsTui extends ToolPanel {
         if (!entry.modules.contains(moduleName)) {
             entry.modules.add(moduleName);
         }
+        entry.moduleVersions.put(moduleName, version != null ? version : "");
         if (entry.version.isEmpty() && version != null) {
             entry.version = version;
         }
@@ -369,19 +383,34 @@ public class PluginsTui extends ToolPanel {
         return extractors;
     }
 
+    private List<Function<PluginEntry, String>> pluginsSortExtractors() {
+        List<Function<PluginEntry, String>> extractors = new ArrayList<>();
+        extractors.add(PluginEntry::ga);
+        extractors.add(e -> e.version);
+        if (!singleModule) {
+            extractors.add(e -> String.valueOf(e.modules.size()));
+        }
+        return extractors;
+    }
+
     private String extractUpdateIcon(PluginEntry e) {
         return e.updateType != null ? e.updateType.name() : "";
     }
 
     private String extractAge(PluginEntry e) {
         if (e.libYears < 0) return "";
-        return String.format(java.util.Locale.US, "%010.3f", e.libYears);
+        return String.format(Locale.US, "%010.3f", e.libYears);
     }
 
     @Override
     protected void onSortChanged() {
-        if (view == View.UPDATES && sortState != null) {
+        if (sortState == null) return;
+        if (view == View.UPDATES) {
             sortState.sort(updates, updatesSortExtractors());
+        } else if (view == View.PLUGINS) {
+            sortState.sort(plugins, pluginsSortExtractors());
+        } else if (view == View.MANAGED) {
+            sortState.sort(managed, pluginsSortExtractors());
         }
     }
 
@@ -472,6 +501,22 @@ public class PluginsTui extends ToolPanel {
     }
 
     boolean handleEvent(Event event, TuiRunner runner) {
+        if (event instanceof MouseEvent mouse) {
+            handleMouseEvent(mouse, null);
+            return true;
+        }
+        if (!(event instanceof KeyEvent key)) {
+            return true;
+        }
+        // digit keys switch views in standalone
+        char ch = key.character();
+        if (ch >= '1' && ch <= '9') {
+            int idx = ch - '1';
+            if (idx < View.values().length) {
+                setActiveSubView(idx);
+                return true;
+            }
+        }
         return handleSimpleStandaloneEvent(event, runner);
     }
 
@@ -812,11 +857,19 @@ public class PluginsTui extends ToolPanel {
 
     private void addModuleDetails(List<Row> rows, PluginEntry entry) {
         if (!entry.modules.isEmpty() && !singleModule) {
+            boolean conflict = entry.hasVersionConflict();
             List<Span> modSpans = new ArrayList<>();
             modSpans.add(Span.raw("Modules:   ").bold());
             for (int i = 0; i < entry.modules.size(); i++) {
                 if (i > 0) modSpans.add(Span.raw(", ").dim());
-                modSpans.add(Span.raw(entry.modules.get(i)));
+                String mod = entry.modules.get(i);
+                modSpans.add(Span.raw(mod));
+                if (conflict) {
+                    String mv = entry.moduleVersions.get(mod);
+                    if (mv != null && !mv.isEmpty()) {
+                        modSpans.add(Span.raw("@" + mv).dim());
+                    }
+                }
             }
             rows.add(Row.from(Cell.from(Line.from(modSpans))));
         }

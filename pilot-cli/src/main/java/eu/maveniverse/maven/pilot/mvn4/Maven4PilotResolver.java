@@ -266,9 +266,8 @@ class Maven4PilotResolver implements PilotResolver {
             DependencyResolverResult result = resolver.resolve(request);
             return convertTree(result.getRoot());
         } catch (Exception e) {
-            DependencyTreeModel.TreeNode root =
-                    new DependencyTreeModel.TreeNode(groupId, artifactId, "", version, "", false, 0);
-            return new DependencyTreeModel(root, List.of(), 1);
+            throw new IllegalStateException(
+                    "Failed to collect dependency tree for " + groupId + ":" + artifactId + ":" + version, e);
         }
     }
 

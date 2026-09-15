@@ -18,15 +18,17 @@
  */
 package eu.maveniverse.maven.pilot;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Compares two {@link DependencyTreeModel} trees and produces a list of diff entries.
- * Adapted from Toolbox's DependencyGraphComparator to work with Pilot's neutral tree model.
+ *
+ * <p>Siblings are matched by GA identity before descending, so an inserted or removed
+ * child before an unchanged sibling does not cause spurious LEFT/RIGHT entries for the
+ * unchanged siblings.
  */
 public final class TreeDiff {
 
@@ -52,44 +54,62 @@ public final class TreeDiff {
 
     public static List<DiffEntry> diff(DependencyTreeModel left, DependencyTreeModel right) {
         List<DiffEntry> result = new ArrayList<>();
-        Deque<DependencyTreeModel.TreeNode[]> stack1 = new ArrayDeque<>();
-        Deque<DependencyTreeModel.TreeNode[]> stack2 = new ArrayDeque<>();
-        stack1.push(new DependencyTreeModel.TreeNode[] {left.root});
-        stack2.push(new DependencyTreeModel.TreeNode[] {right.root});
-
-        while (!stack1.isEmpty() && !stack2.isEmpty()) {
-            DependencyTreeModel.TreeNode n1 = stack1.pop()[0];
-            DependencyTreeModel.TreeNode n2 = stack2.pop()[0];
-
-            if (n1.ga().equals(n2.ga()) && n1.version.equals(n2.version)) {
-                result.add(new DiffEntry(n1.ga(), n1.version, n1.depth, Side.SAME));
-            } else {
-                result.add(new DiffEntry(n1.ga(), n1.version, n1.depth, Side.LEFT));
-                result.add(new DiffEntry(n2.ga(), n2.version, n2.depth, Side.RIGHT));
-            }
-
-            pushChildren(stack1, n1);
-            pushChildren(stack2, n2);
-        }
-        drainRemaining(stack1, Side.LEFT, result);
-        drainRemaining(stack2, Side.RIGHT, result);
+        diffNodes(left.root, right.root, result);
         return result;
     }
 
-    private static void pushChildren(Deque<DependencyTreeModel.TreeNode[]> stack, DependencyTreeModel.TreeNode node) {
-        List<DependencyTreeModel.TreeNode> children = new ArrayList<>(node.children);
-        Collections.reverse(children);
-        for (DependencyTreeModel.TreeNode child : children) {
-            stack.push(new DependencyTreeModel.TreeNode[] {child});
+    private static void diffNodes(
+            DependencyTreeModel.TreeNode left, DependencyTreeModel.TreeNode right, List<DiffEntry> result) {
+        // Emit the root / current pair
+        if (left.ga().equals(right.ga()) && left.version.equals(right.version)) {
+            result.add(new DiffEntry(left.ga(), left.version, left.depth, Side.SAME));
+        } else {
+            result.add(new DiffEntry(left.ga(), left.version, left.depth, Side.LEFT));
+            result.add(new DiffEntry(right.ga(), right.version, right.depth, Side.RIGHT));
+        }
+
+        // Match children by GA identity
+        List<DependencyTreeModel.TreeNode> leftChildren = left.children;
+        List<DependencyTreeModel.TreeNode> rightChildren = right.children;
+
+        // Build GA → node maps (first occurrence wins, preserving order)
+        Map<String, DependencyTreeModel.TreeNode> leftByGa = new LinkedHashMap<>();
+        for (DependencyTreeModel.TreeNode c : leftChildren) {
+            leftByGa.putIfAbsent(c.ga(), c);
+        }
+        Map<String, DependencyTreeModel.TreeNode> rightByGa = new LinkedHashMap<>();
+        for (DependencyTreeModel.TreeNode c : rightChildren) {
+            rightByGa.putIfAbsent(c.ga(), c);
+        }
+
+        // Unified GA order: left order first, then right-only additions
+        List<String> order = new ArrayList<>(leftByGa.keySet());
+        for (String ga : rightByGa.keySet()) {
+            if (!leftByGa.containsKey(ga)) {
+                order.add(ga);
+            }
+        }
+
+        for (String ga : order) {
+            DependencyTreeModel.TreeNode lc = leftByGa.get(ga);
+            DependencyTreeModel.TreeNode rc = rightByGa.get(ga);
+            if (lc != null && rc != null) {
+                // Present in both — recurse
+                diffNodes(lc, rc, result);
+            } else if (lc != null) {
+                // Only in left (removed)
+                drainSubtree(lc, Side.LEFT, result);
+            } else {
+                // Only in right (added)
+                drainSubtree(rc, Side.RIGHT, result);
+            }
         }
     }
 
-    private static void drainRemaining(Deque<DependencyTreeModel.TreeNode[]> stack, Side side, List<DiffEntry> result) {
-        while (!stack.isEmpty()) {
-            DependencyTreeModel.TreeNode[] pair = stack.pop();
-            DependencyTreeModel.TreeNode node = pair[0];
-            result.add(new DiffEntry(node.ga(), node.version, node.depth, side));
-            pushChildren(stack, node);
+    private static void drainSubtree(DependencyTreeModel.TreeNode node, Side side, List<DiffEntry> result) {
+        result.add(new DiffEntry(node.ga(), node.version, node.depth, side));
+        for (DependencyTreeModel.TreeNode child : node.children) {
+            drainSubtree(child, side, result);
         }
     }
 }

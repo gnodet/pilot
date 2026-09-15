@@ -122,8 +122,8 @@ class Maven3PilotResolver implements PilotResolver {
 
     @Override
     public DependencyTreeModel collectManagedDependencyTree(PilotProject project) {
+        MavenProject mp = requireMaven(project);
         try {
-            MavenProject mp = requireMaven(project);
             if (mp.getDependencyManagement() == null
                     || mp.getDependencyManagement().getDependencies().isEmpty()) {
                 return emptyTree(mp);
@@ -142,7 +142,7 @@ class Maven3PilotResolver implements PilotResolver {
             CollectResult result = repoSystem.collectDependencies(repoSession, collectRequest);
             return MojoHelper.fromDependencyNode(result.getRoot());
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to collect managed dependency tree for " + project.gav(), e);
+            return emptyTree(mp);
         }
     }
 

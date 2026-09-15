@@ -1026,7 +1026,7 @@ public class PilotShell {
                         new HelpOverlay.Entry("1-9", "Focus sub-view tab by number"),
                         new HelpOverlay.Entry("Enter", "Switch focus to content pane (from tree)"),
                         new HelpOverlay.Entry("\\", "Cycle left panel: full → narrow → hidden"),
-                        new HelpOverlay.Entry("Alt+d/u/c/a/p/l/s", "Switch tool"),
+                        new HelpOverlay.Entry("Alt+d/u/c/a/g/p/l/s", "Switch tool"),
                         new HelpOverlay.Entry("? / h", "Toggle this help screen"),
                         new HelpOverlay.Entry("q / Ctrl+C", "Quit"))));
 

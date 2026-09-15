@@ -59,6 +59,9 @@ mvn pilot:audit
 # Align dependency conventions
 mvn pilot:align
 
+# Browse declared and managed plugins
+mvn pilot:plugins
+
 # Non-interactive modes (CI-friendly) — all goals support -Dpilot.action=report|check|fix
 mvn compile pilot:dependencies -Dpilot.action=report          # report unused/transitive deps
 mvn compile pilot:dependencies -Dpilot.action=check           # fail build on dep issues
@@ -70,9 +73,6 @@ mvn pilot:audit -Dpilot.action=check                          # fail build on HI
 mvn pilot:updates -Dpilot.action=report                       # print available updates
 mvn pilot:updates -Dpilot.action=fix                          # apply all updates to POM
 mvn pilot:updates -Dpilot.action=check -Dpilot.updates.libyears=5.0  # fail if too stale
-
-# Browse plugins and check for plugin updates
-mvn pilot:plugins
 ```
 
 ### Standalone CLI

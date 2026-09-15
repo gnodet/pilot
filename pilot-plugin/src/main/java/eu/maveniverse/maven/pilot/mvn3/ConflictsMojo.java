@@ -39,11 +39,21 @@ import org.eclipse.aether.graph.DependencyNode;
 import org.eclipse.aether.util.graph.manager.DependencyManagerUtils;
 
 /**
- * Interactive TUI for dependency conflict resolution.
+ * Detect version conflicts across the dependency tree — report or check mode.
+ *
+ * <p>Two actions via {@code -Dpilot.action}:</p>
+ * <ul>
+ *   <li><b>report</b> (default) — prints conflicts as plain text, exits 0 even when conflicts exist</li>
+ *   <li><b>check</b> — prints conflicts and fails the build when any are found</li>
+ * </ul>
+ *
+ * <p>For interactive conflict resolution (pinning versions to {@code dependencyManagement}),
+ * use {@code pilot:pilot} instead.</p>
  *
  * <p>Usage:</p>
  * <pre>
  * mvn pilot:conflicts
+ * mvn pilot:conflicts -Dpilot.action=check
  * </pre>
  *
  * @since 0.1.0
@@ -63,8 +73,18 @@ public class ConflictsMojo extends AbstractMojo {
     @Inject
     private RepositorySystem repoSystem;
 
+    /**
+     * Action to perform: {@code report} (default) prints conflicts as plain text (exits 0);
+     * {@code check} prints conflicts and fails the build if any are found.
+     */
+    @Parameter(property = "pilot.action", defaultValue = "report")
+    String action = "report";
+
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
+        if (!"report".equals(action) && !"check".equals(action)) {
+            throw new MojoExecutionException("Invalid action '" + action + "'. Supported values: report, check.");
+        }
         try {
             List<MavenProject> projects = session.getProjects();
             if (projects.size() > 1) {
@@ -72,6 +92,8 @@ public class ConflictsMojo extends AbstractMojo {
             } else {
                 executeSingleProject(project);
             }
+        } catch (MojoExecutionException | MojoFailureException e) {
+            throw e;
         } catch (Exception e) {
             throw new MojoExecutionException("Failed to analyze conflicts: " + e.getMessage(), e);
         }
@@ -79,14 +101,11 @@ public class ConflictsMojo extends AbstractMojo {
 
     private void executeSingleProject(MavenProject proj) throws Exception {
         List<ConflictsTui.ConflictGroup> conflicts = collectConflictsForProject(proj);
-        String pomPath = proj.getFile().getAbsolutePath();
         String gav = proj.getGroupId() + ":" + proj.getArtifactId() + ":" + proj.getVersion();
-        ConflictsTui tui = new ConflictsTui(conflicts, pomPath, gav);
-        tui.runStandalone();
+        executeNonInteractive(conflicts, gav);
     }
 
     private void executeReactor(List<MavenProject> projects) throws Exception {
-        // Aggregate conflicts across all modules
         Map<String, List<ConflictsTui.ConflictEntry>> mergedMap = new HashMap<>();
         for (MavenProject proj : projects) {
             CollectResult result = repoSystem.collectDependencies(repoSession, MojoHelper.buildCollectRequest(proj));
@@ -102,10 +121,53 @@ public class ConflictsMojo extends AbstractMojo {
                 .collect(Collectors.toList());
 
         MavenProject root = projects.get(0);
-        String pomPath = root.getFile().getAbsolutePath();
-        String gav = root.getGroupId() + ":" + root.getArtifactId() + ":" + root.getVersion();
-        ConflictsTui tui = new ConflictsTui(conflicts, pomPath, gav + " (reactor: " + projects.size() + " modules)");
-        tui.runStandalone();
+        String gav = root.getGroupId() + ":" + root.getArtifactId() + ":" + root.getVersion() + " (reactor: "
+                + projects.size() + " modules)";
+
+        executeNonInteractive(conflicts, gav);
+    }
+
+    private void executeNonInteractive(List<ConflictsTui.ConflictGroup> conflicts, String gav)
+            throws MojoFailureException {
+        // Retain only groups with a real version conflict: either multiple distinct requested
+        // versions, or at least one entry where the requested version differs from the resolved one.
+        conflicts = conflicts.stream()
+                .filter(group -> group.entries.stream()
+                                        .map(e -> e.requestedVersion)
+                                        .distinct()
+                                        .limit(2)
+                                        .count()
+                                > 1
+                        || group.entries.stream().anyMatch(e -> !e.requestedVersion.equals(e.resolvedVersion)))
+                .toList();
+
+        if (conflicts.isEmpty()) {
+            getLog().info("No dependency conflicts found in " + gav + ".");
+            return;
+        }
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Dependency conflicts in ").append(gav).append(":\n");
+        for (ConflictsTui.ConflictGroup group : conflicts) {
+            sb.append("\n  ").append(group.ga).append(":\n");
+            for (ConflictsTui.ConflictEntry entry : group.entries) {
+                sb.append("    - requested ")
+                        .append(entry.requestedVersion)
+                        .append(", resolved ")
+                        .append(entry.resolvedVersion);
+                if (!entry.requestedVersion.equals(entry.resolvedVersion)) {
+                    sb.append(" [CONFLICT]");
+                }
+                sb.append("\n");
+                sb.append("      via: ").append(entry.path).append("\n");
+            }
+        }
+
+        if ("check".equals(action)) {
+            throw new MojoFailureException(sb.toString());
+        } else {
+            getLog().info(sb.toString());
+        }
     }
 
     private List<ConflictsTui.ConflictGroup> collectConflictsForProject(MavenProject proj) throws Exception {

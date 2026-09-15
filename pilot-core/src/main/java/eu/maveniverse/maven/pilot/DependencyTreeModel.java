@@ -31,13 +31,14 @@ import java.util.Set;
 public class DependencyTreeModel {
 
     public static class TreeNode {
-        final String groupId;
-        final String artifactId;
-        final String classifier;
-        final String version;
-        final String scope;
-        final boolean optional;
-        final int depth;
+        public final String groupId;
+        public final String artifactId;
+        public final String classifier;
+        public final String extension;
+        public final String version;
+        public final String scope;
+        public final boolean optional;
+        public final int depth;
         public final List<TreeNode> children;
         boolean expanded;
         public String requestedVersion; // non-null if conflict
@@ -45,7 +46,7 @@ public class DependencyTreeModel {
         public String repository; // repository id where this was resolved from
 
         public TreeNode(String groupId, String artifactId, String version, String scope, boolean optional, int depth) {
-            this(groupId, artifactId, "", version, scope, optional, depth);
+            this(groupId, artifactId, "", "", version, scope, optional, depth);
         }
 
         public TreeNode(
@@ -56,9 +57,22 @@ public class DependencyTreeModel {
                 String scope,
                 boolean optional,
                 int depth) {
+            this(groupId, artifactId, classifier, "", version, scope, optional, depth);
+        }
+
+        public TreeNode(
+                String groupId,
+                String artifactId,
+                String classifier,
+                String extension,
+                String version,
+                String scope,
+                boolean optional,
+                int depth) {
             this.groupId = groupId;
             this.artifactId = artifactId;
             this.classifier = classifier;
+            this.extension = extension;
             this.version = version;
             this.scope = scope != null ? scope : SCOPE_COMPILE;
             this.optional = optional;
@@ -75,18 +89,18 @@ public class DependencyTreeModel {
             return groupId + ":" + artifactId + ":" + version;
         }
 
-        boolean hasChildren() {
+        public boolean hasChildren() {
             return !children.isEmpty();
         }
 
-        boolean isConflict() {
+        public boolean isConflict() {
             return requestedVersion != null && !requestedVersion.equals(version);
         }
     }
 
     public final TreeNode root;
-    final List<TreeNode> conflicts;
-    final int totalNodes;
+    public final List<TreeNode> conflicts;
+    public final int totalNodes;
 
     public DependencyTreeModel(TreeNode root, List<TreeNode> conflicts, int totalNodes) {
         this.root = root;
@@ -187,7 +201,7 @@ public class DependencyTreeModel {
     /**
      * Create a new DependencyTreeModel filtered to only include the given scope.
      */
-    DependencyTreeModel filterByScope(String scope) {
+    public DependencyTreeModel filterByScope(String scope) {
         if (scope == null) {
             return this;
         }
@@ -215,6 +229,7 @@ public class DependencyTreeModel {
                 source.groupId,
                 source.artifactId,
                 source.classifier,
+                source.extension,
                 source.version,
                 source.scope,
                 source.optional,

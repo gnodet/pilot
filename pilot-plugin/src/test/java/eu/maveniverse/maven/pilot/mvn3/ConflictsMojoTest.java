@@ -19,12 +19,14 @@
 package eu.maveniverse.maven.pilot.mvn3;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import eu.maveniverse.maven.pilot.ConflictsTui;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.apache.maven.plugin.MojoExecutionException;
 import org.eclipse.aether.artifact.DefaultArtifact;
 import org.eclipse.aether.graph.DefaultDependencyNode;
 import org.eclipse.aether.graph.Dependency;
@@ -33,6 +35,50 @@ import org.eclipse.aether.util.graph.manager.DependencyManagerUtils;
 import org.junit.jupiter.api.Test;
 
 class ConflictsMojoTest {
+
+    // --- action validation ---
+
+    @Test
+    void defaultActionIsReport() {
+        var mojo = new ConflictsMojo();
+        assertThat(mojo.action).isEqualTo("report");
+    }
+
+    @Test
+    void rejectsTuiAction() {
+        var mojo = new ConflictsMojo();
+        mojo.action = "tui";
+        assertThatThrownBy(mojo::execute)
+                .isInstanceOf(MojoExecutionException.class)
+                .hasMessageContaining("Invalid action 'tui'");
+    }
+
+    @Test
+    void rejectsFixAction() {
+        var mojo = new ConflictsMojo();
+        mojo.action = "fix";
+        assertThatThrownBy(mojo::execute)
+                .isInstanceOf(MojoExecutionException.class)
+                .hasMessageContaining("Invalid action 'fix'");
+    }
+
+    @Test
+    void rejectsInvalidAction() {
+        var mojo = new ConflictsMojo();
+        mojo.action = "bogus";
+        assertThatThrownBy(mojo::execute)
+                .isInstanceOf(MojoExecutionException.class)
+                .hasMessageContaining("Invalid action 'bogus'");
+    }
+
+    @Test
+    void acceptsValidActions() {
+        for (String a : List.of("report", "check")) {
+            var mojo = new ConflictsMojo();
+            mojo.action = a;
+            assertThat(mojo.action).isEqualTo(a);
+        }
+    }
 
     // --- collectConflicts: dependency-management version override detection ---
 

@@ -60,8 +60,8 @@ public class ConflictsTui extends ToolPanel {
         final String artifactId;
         public final String requestedVersion;
         public final String resolvedVersion;
-        final String path; // dependency path
-        final String scope;
+        public final String path; // dependency path
+        public final String scope;
 
         public ConflictEntry(
                 String groupId,
@@ -84,8 +84,8 @@ public class ConflictsTui extends ToolPanel {
     }
 
     public static class ConflictGroup {
-        final String ga;
-        final List<ConflictEntry> entries;
+        public final String ga;
+        public final List<ConflictEntry> entries;
 
         public ConflictGroup(String ga, List<ConflictEntry> entries) {
             this.ga = ga;

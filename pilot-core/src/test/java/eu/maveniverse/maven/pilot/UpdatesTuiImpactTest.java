@@ -68,14 +68,6 @@ class UpdatesTuiImpactTest {
         return new UpdatesTui(result, model, "com.example:app:1.0", (g, a) -> List.of());
     }
 
-    private UpdatesTui createTuiWithImpactResolver(
-            ReactorCollector.CollectionResult result, List<PilotProject> projects) {
-        ReactorModel model = ReactorModel.build(projects);
-        // Resolver that returns an empty tree — impact is resolvable but yields no diff
-        UpdatesTui.TreeImpactResolver resolver = (g, a, oldV, newV) -> List.of();
-        return new UpdatesTui(result, model, "com.example:app:1.0", (grp, art) -> List.of(), resolver, null);
-    }
-
     // --- resolveImpactTarget: dependency row with no update ---
 
     @Test

@@ -66,7 +66,7 @@ import org.eclipse.aether.resolution.ArtifactRequest;
  *
  * @since 0.1.0
  */
-@Mojo(name = "pom", requiresProject = true, aggregator = true, threadSafe = true)
+@Mojo(name = "pom", requiresProject = true, threadSafe = true)
 public class PomMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
@@ -101,13 +101,7 @@ public class PomMojo extends AbstractMojo {
         }
         resolveAction();
         try {
-            if ("report".equals(action)) {
-                for (MavenProject proj : session.getProjects()) {
-                    executeForProject(proj);
-                }
-            } else {
-                executeForProject(project);
-            }
+            executeForProject(project);
         } catch (MojoExecutionException | MojoFailureException e) {
             throw e;
         } catch (Exception e) {

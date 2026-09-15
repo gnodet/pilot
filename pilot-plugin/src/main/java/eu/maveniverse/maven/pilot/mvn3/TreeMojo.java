@@ -53,7 +53,7 @@ import org.eclipse.aether.collection.CollectResult;
  *
  * @since 0.1.0
  */
-@Mojo(name = "tree", requiresProject = true, aggregator = true, threadSafe = true)
+@Mojo(name = "tree", requiresProject = true, threadSafe = true)
 public class TreeMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
@@ -94,13 +94,7 @@ public class TreeMojo extends AbstractMojo {
         }
         resolveAction();
         try {
-            if ("report".equals(action)) {
-                for (MavenProject proj : session.getProjects()) {
-                    executeForProject(proj);
-                }
-            } else {
-                executeForProject(project);
-            }
+            executeForProject(project);
         } catch (MojoExecutionException | MojoFailureException e) {
             throw e;
         } catch (Exception e) {

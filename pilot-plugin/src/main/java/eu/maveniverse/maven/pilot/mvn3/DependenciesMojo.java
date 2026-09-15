@@ -68,7 +68,7 @@ import org.eclipse.aether.resolution.DependencyResult;
  *
  * @since 0.1.0
  */
-@Mojo(name = "dependencies", requiresProject = true, aggregator = true, threadSafe = true)
+@Mojo(name = "dependencies", requiresProject = true, threadSafe = true)
 public class DependenciesMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
@@ -113,13 +113,7 @@ public class DependenciesMojo extends AbstractMojo {
         }
         resolveAction();
         try {
-            if ("report".equals(action) || "check".equals(action) || "fix".equals(action)) {
-                for (MavenProject proj : session.getProjects()) {
-                    executeForProject(proj);
-                }
-            } else {
-                executeForProject(project);
-            }
+            executeForProject(project);
         } catch (MojoFailureException e) {
             throw e;
         } catch (Exception e) {

@@ -62,7 +62,7 @@ import org.apache.maven.project.MavenProject;
  *
  * @since 0.2.0
  */
-@Mojo(name = "align", requiresProject = true, aggregator = true, threadSafe = true)
+@Mojo(name = "align", requiresProject = true, threadSafe = true)
 public class AlignMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
@@ -110,13 +110,7 @@ public class AlignMojo extends AbstractMojo {
         }
         resolveAction();
         try {
-            if ("report".equals(action) || "check".equals(action) || "fix".equals(action)) {
-                for (MavenProject proj : session.getProjects()) {
-                    executeForProject(proj);
-                }
-            } else {
-                executeForProject(project);
-            }
+            executeForProject(project);
         } catch (MojoExecutionException | MojoFailureException e) {
             throw e;
         } catch (Exception e) {

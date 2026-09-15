@@ -109,6 +109,25 @@ class UpdatesTuiImpactTest {
         assertThat(tui.status()).isEqualTo("Tree impact not available");
     }
 
+    @Test
+    void resolveImpactTargetReturnsNullForDepWithNoUpdate() throws IOException {
+        // Build a dep row where newestVersion == null → resolveImpactTarget must return null
+        ReactorCollector.AggregatedDependency aggDep = new ReactorCollector.AggregatedDependency("com.example", "lib");
+        aggDep.primaryVersion = "1.0";
+        // newestVersion intentionally left null — no update available
+        var row = UpdatesTui.ReactorRow.dep(aggDep);
+
+        Path dir = subdir("resolve-no-update");
+        PilotProject project = createProject("com.example", "app", "1.0", dir);
+        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
+        UpdatesTui tui = createTui(result, List.of(project));
+
+        // resolveImpactTarget returns null and sets status to "No update available..."
+        UpdatesTui.ImpactTarget target = tui.resolveImpactTarget(row);
+        assertThat(target).isNull();
+        assertThat(tui.status()).isEqualTo("No update available for tree impact");
+    }
+
     // --- ReactorRow.group(): group header with update ---
 
     @Test

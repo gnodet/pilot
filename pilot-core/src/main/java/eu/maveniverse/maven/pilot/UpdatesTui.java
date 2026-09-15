@@ -1017,7 +1017,7 @@ public class UpdatesTui extends ToolPanel {
         status = changes == 0 ? "No changes to show" : changes + " line(s) changed across " + diffs.size() + " file(s)";
     }
 
-    private record ImpactTarget(ReactorCollector.AggregatedDependency dep, String label) {}
+    record ImpactTarget(ReactorCollector.AggregatedDependency dep, String label) {}
 
     /**
      * Resolve the selected row to a single dep and label for tree-impact computation.

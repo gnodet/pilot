@@ -225,6 +225,12 @@ public class AlignMojo extends AbstractMojo {
 
     /**
      * Produces a simple before/after diff for logging.
+     *
+     * <p>Uses a positional line comparison (line N before vs line N after), which is accurate
+     * when alignment changes are few isolated lines. If an insertion or deletion shifts many
+     * subsequent lines, the diff may show unchanged lines as false +/- pairs. For typical POM
+     * alignment this is acceptable; for a fully accurate unified diff a Myers/LCS algorithm
+     * would be needed.
      */
     private String buildDiff(String before, String after) {
         String[] beforeLines = before.split("\\r?\\n", -1);

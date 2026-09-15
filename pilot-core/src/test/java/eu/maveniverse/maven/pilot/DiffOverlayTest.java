@@ -168,6 +168,6 @@ class DiffOverlayTest {
         DiffOverlay overlay = new DiffOverlay();
         overlay.open("a\nb\nc\nd\ne\nf\ng\nh\n", "x\ny\nz\nw\ne\nf\ng\nh\n");
         overlay.scrollDown(2);
-        assertThat(overlay.scroll()).isGreaterThanOrEqualTo(0);
+        assertThat(overlay.scroll()).isGreaterThan(0);
     }
 }

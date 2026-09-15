@@ -71,8 +71,8 @@ public final class TreeDiff {
 
     private static void diffNodes(
             DependencyTreeModel.TreeNode left, DependencyTreeModel.TreeNode right, List<DiffEntry> result) {
-        // Emit the root / current pair
-        if (left.ga().equals(right.ga()) && left.version.equals(right.version)) {
+        // Emit the root / current pair — treat scope change as a difference
+        if (left.ga().equals(right.ga()) && left.version.equals(right.version) && left.scope.equals(right.scope)) {
             result.add(new DiffEntry(left.ga(), left.version, left.depth, Side.SAME));
         } else {
             result.add(new DiffEntry(left.ga(), left.version, left.depth, Side.LEFT));

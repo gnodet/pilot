@@ -30,6 +30,7 @@ import dev.tamboui.tui.TuiRunner;
 import dev.tamboui.tui.event.Event;
 import dev.tamboui.tui.event.KeyEvent;
 import dev.tamboui.tui.event.MouseEvent;
+import dev.tamboui.tui.event.TickEvent;
 import dev.tamboui.widgets.block.Block;
 import dev.tamboui.widgets.block.BorderType;
 import dev.tamboui.widgets.paragraph.Paragraph;
@@ -505,8 +506,11 @@ public class PluginsTui extends ToolPanel {
             handleMouseEvent(mouse, null);
             return true;
         }
+        if (event instanceof TickEvent) {
+            return needsTickRedraw();
+        }
         if (!(event instanceof KeyEvent key)) {
-            return true;
+            return false;
         }
         // digit keys switch views in standalone
         char ch = key.character();

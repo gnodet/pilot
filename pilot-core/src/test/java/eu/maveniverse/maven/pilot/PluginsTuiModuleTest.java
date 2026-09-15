@@ -27,8 +27,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Properties;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 /**
  * Additional PluginsTui tests focusing on per-module version tracking and module identity.
@@ -74,38 +78,23 @@ class PluginsTuiModuleTest {
 
     // --- PluginEntry.hasVersionConflict() ---
 
-    @Test
-    void pluginEntryNoConflictWhenSameVersion() {
-        PluginsTui.PluginEntry entry = new PluginsTui.PluginEntry("g", "a", "1.0", false);
-        entry.moduleVersions.put("g1:mod1", "1.0");
-        entry.moduleVersions.put("g2:mod2", "1.0");
-        assertThat(entry.hasVersionConflict()).isFalse();
+    static Stream<Arguments> hasVersionConflictCases() {
+        return Stream.of(
+                // description, entryVersion, v1, v2, expectedConflict
+                Arguments.of("same version → no conflict", "1.0", "1.0", "1.0", false),
+                Arguments.of("different versions → conflict", "1.0", "1.0", "2.0", true),
+                Arguments.of("all empty versions → no conflict", "", "", "", false),
+                Arguments.of("one empty version ignored → no conflict", "1.0", "1.0", "", false));
     }
 
-    @Test
-    void pluginEntryConflictWhenDifferentVersions() {
-        PluginsTui.PluginEntry entry = new PluginsTui.PluginEntry("g", "a", "1.0", false);
-        entry.moduleVersions.put("g1:mod1", "1.0");
-        entry.moduleVersions.put("g2:mod2", "2.0");
-        assertThat(entry.hasVersionConflict()).isTrue();
-    }
-
-    @Test
-    void pluginEntryNoConflictForEmptyVersions() {
-        PluginsTui.PluginEntry entry = new PluginsTui.PluginEntry("g", "a", "", false);
-        entry.moduleVersions.put("g1:mod1", "");
-        entry.moduleVersions.put("g2:mod2", "");
-        assertThat(entry.hasVersionConflict()).isFalse();
-    }
-
-    @Test
-    void pluginEntryConflictIgnoresEmptyVersions() {
-        // one module declares version, another inherits (empty)
-        PluginsTui.PluginEntry entry = new PluginsTui.PluginEntry("g", "a", "1.0", false);
-        entry.moduleVersions.put("g1:mod1", "1.0");
-        entry.moduleVersions.put("g2:mod2", "");
-        // only non-empty versions are compared — only "1.0" → no conflict
-        assertThat(entry.hasVersionConflict()).isFalse();
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("hasVersionConflictCases")
+    void pluginEntryVersionConflict(
+            String description, String entryVersion, String v1, String v2, boolean expectedConflict) {
+        PluginsTui.PluginEntry entry = new PluginsTui.PluginEntry("g", "a", entryVersion, false);
+        entry.moduleVersions.put("g1:mod1", v1);
+        entry.moduleVersions.put("g2:mod2", v2);
+        assertThat(entry.hasVersionConflict()).isEqualTo(expectedConflict);
     }
 
     // --- Module identity uses ga() not artifactId ---

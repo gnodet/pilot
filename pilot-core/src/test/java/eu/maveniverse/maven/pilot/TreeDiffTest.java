@@ -136,4 +136,44 @@ class TreeDiffTest {
         assertThat(diff.get(2).side()).isEqualTo(TreeDiff.Side.LEFT);
         assertThat(diff.get(3).side()).isEqualTo(TreeDiff.Side.RIGHT);
     }
+
+    @Test
+    void classifierQualifiedSiblingsAreDistinct() {
+        // Both trees have two children with the same GA but different classifiers;
+        // they must not collapse into a single entry.
+        var root1 = new DependencyTreeModel.TreeNode("g", "a", "", "1.0", "compile", false, 0);
+        root1.children.add(new DependencyTreeModel.TreeNode("g", "b", "", "1.0", "compile", false, 1));
+        root1.children.add(new DependencyTreeModel.TreeNode("g", "b", "tests", "1.0", "test", false, 1));
+        var root2 = new DependencyTreeModel.TreeNode("g", "a", "", "1.0", "compile", false, 0);
+        root2.children.add(new DependencyTreeModel.TreeNode("g", "b", "", "2.0", "compile", false, 1));
+        root2.children.add(new DependencyTreeModel.TreeNode("g", "b", "tests", "2.0", "test", false, 1));
+
+        List<TreeDiff.DiffEntry> diff = TreeDiff.diff(tree(root1), tree(root2));
+
+        // root SAME + 2 × (LEFT + RIGHT) = 5 entries
+        assertThat(diff).hasSize(5);
+        assertThat(diff.get(0).side()).isEqualTo(TreeDiff.Side.SAME); // root
+        assertThat(diff.get(1).side()).isEqualTo(TreeDiff.Side.LEFT); // g:b 1.0
+        assertThat(diff.get(2).side()).isEqualTo(TreeDiff.Side.RIGHT); // g:b 2.0
+        assertThat(diff.get(3).side()).isEqualTo(TreeDiff.Side.LEFT); // g:b:tests 1.0
+        assertThat(diff.get(4).side()).isEqualTo(TreeDiff.Side.RIGHT); // g:b:tests 2.0
+    }
+
+    @Test
+    void scopeChangeProducesLeftAndRight() {
+        // A dependency whose GAV is unchanged but whose scope changes from compile to runtime
+        // must appear as LEFT+RIGHT, not SAME.
+        var root1 = new DependencyTreeModel.TreeNode("g", "a", "", "1.0", "compile", false, 0);
+        root1.children.add(new DependencyTreeModel.TreeNode("g", "b", "", "1.0", "compile", false, 1));
+        var root2 = new DependencyTreeModel.TreeNode("g", "a", "", "1.0", "compile", false, 0);
+        root2.children.add(new DependencyTreeModel.TreeNode("g", "b", "", "1.0", "runtime", false, 1));
+
+        List<TreeDiff.DiffEntry> diff = TreeDiff.diff(tree(root1), tree(root2));
+
+        // root SAME + LEFT + RIGHT = 3 entries
+        assertThat(diff).hasSize(3);
+        assertThat(diff.get(0).side()).isEqualTo(TreeDiff.Side.SAME); // root
+        assertThat(diff.get(1).side()).isEqualTo(TreeDiff.Side.LEFT); // g:b compile
+        assertThat(diff.get(2).side()).isEqualTo(TreeDiff.Side.RIGHT); // g:b runtime
+    }
 }

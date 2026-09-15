@@ -648,6 +648,7 @@ public class UpdatesTui extends ToolPanel {
         if (treeImpactOverlay.isActive()) {
             if (key.isKey(KeyCode.ESCAPE) || key.isCharIgnoreCase('q') || key.isCharIgnoreCase('t')) {
                 treeImpactOverlay.close();
+                treeImpactGeneration.incrementAndGet();
                 return true;
             }
             treeImpactOverlay.handleScrollKey(key, lastContentHeight);
@@ -713,6 +714,7 @@ public class UpdatesTui extends ToolPanel {
         if (treeImpactOverlay.isActive()) {
             if (key.isKey(KeyCode.ESCAPE) || key.isCharIgnoreCase('q') || key.isCharIgnoreCase('t')) {
                 treeImpactOverlay.close();
+                treeImpactGeneration.incrementAndGet();
                 return true;
             }
             treeImpactOverlay.handleScrollKey(key, lastContentHeight);

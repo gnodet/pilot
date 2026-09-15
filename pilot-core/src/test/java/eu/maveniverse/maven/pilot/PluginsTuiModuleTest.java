@@ -155,61 +155,39 @@ class PluginsTuiModuleTest {
 
     // --- Sorting in all three views ---
 
-    @Test
-    void sortKeyPressHandledInPluginsView() throws IOException {
-        Path dir = subdir("sort-plugins");
-        PilotProject project = createProject(
-                "com.example",
-                "app",
-                "1.0",
-                dir,
-                List.of(
-                        new PilotProject.Plugin("org.apache.maven.plugins", "maven-surefire-plugin", "3.2.5"),
-                        new PilotProject.Plugin("org.apache.maven.plugins", "maven-compiler-plugin", "3.11.0")),
-                List.of());
+    static Stream<Arguments> sortViewCases() {
+        List<PilotProject.Plugin> twoPlugins = List.of(
+                new PilotProject.Plugin("org.apache.maven.plugins", "maven-surefire-plugin", "3.2.5"),
+                new PilotProject.Plugin("org.apache.maven.plugins", "maven-compiler-plugin", "3.11.0"));
+        List<PilotProject.Plugin> twoManaged = List.of(
+                new PilotProject.Plugin("org.apache.maven.plugins", "maven-jar-plugin", "3.3.0"),
+                new PilotProject.Plugin("org.apache.maven.plugins", "maven-assembly-plugin", "3.6.0"));
+        List<PilotProject.Plugin> onePlugin =
+                List.of(new PilotProject.Plugin("org.apache.maven.plugins", "maven-compiler-plugin", "3.11.0"));
+        return Stream.of(
+                Arguments.of("Plugins view", 0, twoPlugins, List.of(), false),
+                Arguments.of("Managed view", 1, List.of(), twoManaged, false),
+                Arguments.of("Updates view", 2, onePlugin, List.of(), true));
+    }
+
+    @ParameterizedTest(name = "sort key handled in {0}")
+    @MethodSource("sortViewCases")
+    void sortKeyPressHandledInView(
+            String viewName,
+            int subView,
+            List<PilotProject.Plugin> plugins,
+            List<PilotProject.Plugin> managedPlugins,
+            boolean setLoadingFalse)
+            throws IOException {
+        Path dir = subdir("sort-" + viewName.toLowerCase().replace(' ', '-'));
+        PilotProject project = createProject("com.example", "app", "1.0", dir, plugins, managedPlugins);
         PluginsTui tui = createTui(project, List.of(project));
-        tui.setActiveSubView(0); // Plugins view
+        if (setLoadingFalse) {
+            tui.loading = false;
+        }
+        tui.setActiveSubView(subView);
 
         // s key → triggers sort (should not throw)
-        assertThat(tui.handleKeyEvent(KeyEvent.ofChar('s'))).isTrue();
-        String output = TuiTestHelper.render(tui::renderStandalone);
-        assertThat(output).isNotEmpty();
-    }
-
-    @Test
-    void sortKeyPressHandledInManagedView() throws IOException {
-        Path dir = subdir("sort-managed");
-        PilotProject project = createProject(
-                "com.example",
-                "app",
-                "1.0",
-                dir,
-                List.of(),
-                List.of(
-                        new PilotProject.Plugin("org.apache.maven.plugins", "maven-jar-plugin", "3.3.0"),
-                        new PilotProject.Plugin("org.apache.maven.plugins", "maven-assembly-plugin", "3.6.0")));
-        PluginsTui tui = createTui(project, List.of(project));
-        tui.setActiveSubView(1); // Managed view
-
-        assertThat(tui.handleKeyEvent(KeyEvent.ofChar('s'))).isTrue();
-        String output = TuiTestHelper.render(tui::renderStandalone);
-        assertThat(output).isNotEmpty();
-    }
-
-    @Test
-    void sortKeyPressHandledInUpdatesView() throws IOException {
-        Path dir = subdir("sort-updates");
-        PilotProject project = createProject(
-                "com.example",
-                "app",
-                "1.0",
-                dir,
-                List.of(new PilotProject.Plugin("org.apache.maven.plugins", "maven-compiler-plugin", "3.11.0")),
-                List.of());
-        PluginsTui tui = createTui(project, List.of(project));
-        tui.loading = false;
-        tui.setActiveSubView(2); // Updates view
-
         assertThat(tui.handleKeyEvent(KeyEvent.ofChar('s'))).isTrue();
         String output = TuiTestHelper.render(tui::renderStandalone);
         assertThat(output).isNotEmpty();

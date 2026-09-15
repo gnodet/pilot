@@ -260,6 +260,37 @@ class PluginsTuiModuleTest {
         assertThat(output).isNotEmpty();
     }
 
+    // --- applyFilter includes both declared and managed entries with same GA ---
+
+    @Test
+    void updatesViewIncludesBothDeclaredAndManagedEntriesWithSameGa() throws IOException {
+        // When a declared plugin and a managed plugin share the same GA (both have updates),
+        // the Updates view must show both entries, not suppress the managed one.
+        Path dir = subdir("declared-managed-same-ga");
+        PilotProject.Plugin declared =
+                new PilotProject.Plugin("org.apache.maven.plugins", "maven-compiler-plugin", "3.11.0");
+        PilotProject.Plugin managed =
+                new PilotProject.Plugin("org.apache.maven.plugins", "maven-compiler-plugin", "3.11.0");
+        PilotProject project = createProject("com.example", "app", "1.0", dir, List.of(declared), List.of(managed));
+        PluginsTui tui = createTui(project, List.of(project));
+
+        // Simulate version resolution resolving the same GA to a newer version
+        for (PluginsTui.PluginEntry e : tui.plugins) {
+            e.newestVersion = "3.14.0";
+            e.updateType = VersionComparator.UpdateType.MINOR;
+        }
+        for (PluginsTui.PluginEntry e : tui.managed) {
+            e.newestVersion = "3.14.0";
+            e.updateType = VersionComparator.UpdateType.MINOR;
+        }
+
+        tui.loading = false;
+        tui.applyFilter();
+
+        // Both the declared and managed entry should appear in updates (not suppressed by putIfAbsent)
+        assertThat(tui.updates).hasSize(2);
+    }
+
     // --- handleEvent key ---
 
     @Test

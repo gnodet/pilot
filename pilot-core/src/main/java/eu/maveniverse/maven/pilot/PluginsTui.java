@@ -117,7 +117,7 @@ public class PluginsTui extends ToolPanel {
 
     final List<PluginEntry> plugins;
     final List<PluginEntry> managed;
-    private final List<PluginEntry> updates = new ArrayList<>();
+    final List<PluginEntry> updates = new ArrayList<>();
     private final boolean singleModule;
     private final UpdatesTui.VersionResolver versionResolver;
     private final ExecutorService httpPool = PilotUtil.newHttpPool();
@@ -246,12 +246,6 @@ public class PluginsTui extends ToolPanel {
 
     private void onVersionsComplete(List<PluginEntry> resolved) {
         loading = false;
-        updates.clear();
-        for (PluginEntry entry : resolved) {
-            if (entry.hasUpdate()) {
-                updates.add(entry);
-            }
-        }
         applyFilter();
         statusText = buildStatusMessage();
         // Fetch release dates for all entries (plugins + managed) so every view
@@ -263,17 +257,15 @@ public class PluginsTui extends ToolPanel {
         fetchReleaseDates(allEntries);
     }
 
-    private void applyFilter() {
-        // updates list is rebuilt when filter changes
+    void applyFilter() {
+        // updates list is rebuilt when filter changes; include all entries so that a
+        // declared plugin and a managed plugin sharing the same GA both appear in the
+        // Updates view when both have received a newer version.
         List<PluginEntry> all = new ArrayList<>();
         all.addAll(plugins);
         all.addAll(managed);
-        Map<String, PluginEntry> deduped = new LinkedHashMap<>();
-        for (PluginEntry e : all) {
-            deduped.putIfAbsent(e.ga(), e);
-        }
         updates.clear();
-        for (PluginEntry entry : deduped.values()) {
+        for (PluginEntry entry : all) {
             if (!entry.hasUpdate()) continue;
             boolean show =
                     switch (filter) {

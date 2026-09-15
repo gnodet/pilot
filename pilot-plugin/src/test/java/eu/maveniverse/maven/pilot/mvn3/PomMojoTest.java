@@ -18,90 +18,42 @@
  */
 package eu.maveniverse.maven.pilot.mvn3;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.File;
+import java.nio.file.Files;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class PomMojoTest {
 
     @Test
-    void defaultActionIsTui() {
-        var mojo = new PomMojo();
-        assertThat(mojo.action).isEqualTo("tui");
+    void printsRawPomContent(@TempDir java.nio.file.Path tmpDir) throws Exception {
+        // Write a minimal POM file
+        java.nio.file.Path pomFile = tmpDir.resolve("pom.xml");
+        String content = "<project><modelVersion>4.0.0</modelVersion></project>";
+        Files.writeString(pomFile, content);
+
+        MavenProject project = new MavenProject();
+        project.setFile(pomFile.toFile());
+
+        PomMojo mojo = new PomMojo();
+        MojoTestHelper.setField(mojo, "project", project);
+
+        // execute() logs via getLog() — just verify it doesn't throw
+        mojo.execute();
     }
 
     @Test
-    void rejectsCheckAction() {
-        var mojo = new PomMojo();
-        mojo.action = "check";
-        assertThatThrownBy(mojo::execute)
-                .isInstanceOf(MojoExecutionException.class)
-                .hasMessageContaining("check")
-                .hasMessageContaining("not supported");
-    }
+    void throwsWhenPomFileNotReadable() throws Exception {
+        MavenProject project = new MavenProject();
+        project.setFile(new File("/nonexistent/path/pom.xml"));
 
-    @Test
-    void rejectsFixAction() {
-        var mojo = new PomMojo();
-        mojo.action = "fix";
-        assertThatThrownBy(mojo::execute)
-                .isInstanceOf(MojoExecutionException.class)
-                .hasMessageContaining("fix")
-                .hasMessageContaining("not supported");
-    }
+        PomMojo mojo = new PomMojo();
+        MojoTestHelper.setField(mojo, "project", project);
 
-    @Test
-    void rejectsInvalidAction() {
-        var mojo = new PomMojo();
-        mojo.action = "bogus";
-        assertThatThrownBy(mojo::execute)
-                .isInstanceOf(MojoExecutionException.class)
-                .hasMessageContaining("Invalid action 'bogus'");
-    }
-
-    // --- resolveAction / headless fallback ---
-
-    @Test
-    void resolveActionSwitchesTuiToReportWhenHeadless() {
-        var mojo = new PomMojo() {
-            @Override
-            boolean isHeadless() {
-                return true;
-            }
-        };
-        assertThat(mojo.action).isEqualTo("tui");
-
-        mojo.resolveAction();
-
-        assertThat(mojo.action)
-                .as("tui must be rerouted to report in headless environments")
-                .isEqualTo("report");
-    }
-
-    @Test
-    void resolveActionPreservesReportWhenHeadless() {
-        var mojo = new PomMojo() {
-            @Override
-            boolean isHeadless() {
-                return true;
-            }
-        };
-        mojo.action = "report";
-        mojo.resolveAction();
-        assertThat(mojo.action).isEqualTo("report");
-    }
-
-    @Test
-    void resolveActionPreservesTuiWhenInteractive() {
-        var mojo = new PomMojo() {
-            @Override
-            boolean isHeadless() {
-                return false;
-            }
-        };
-        mojo.resolveAction();
-        assertThat(mojo.action).isEqualTo("tui");
+        assertThatThrownBy(mojo::execute).isInstanceOf(MojoExecutionException.class);
     }
 }

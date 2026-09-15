@@ -22,16 +22,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import eu.maveniverse.domtrip.maven.AlignOptions;
-import java.util.List;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.junit.jupiter.api.Test;
 
 class AlignMojoTest {
 
     @Test
-    void defaultActionIsTui() {
+    void defaultActionIsReport() {
         var mojo = new AlignMojo();
-        assertThat(mojo.action).isEqualTo("tui");
+        assertThat(mojo.action).isEqualTo("report");
     }
 
     @Test
@@ -43,50 +42,13 @@ class AlignMojoTest {
                 .hasMessageContaining("Invalid action 'bogus'");
     }
 
-    // --- resolveAction / headless fallback ---
-
     @Test
-    void resolveActionSwitchesTuiToReportWhenHeadless() {
-        var mojo = new AlignMojo() {
-            @Override
-            boolean isHeadless() {
-                return true;
-            }
-        };
-        assertThat(mojo.action).isEqualTo("tui");
-
-        mojo.resolveAction();
-
-        assertThat(mojo.action)
-                .as("tui must be rerouted to report in headless environments")
-                .isEqualTo("report");
-    }
-
-    @Test
-    void resolveActionPreservesExplicitActionsWhenHeadless() {
-        for (String a : List.of("check", "report", "fix")) {
-            var mojo = new AlignMojo() {
-                @Override
-                boolean isHeadless() {
-                    return true;
-                }
-            };
-            mojo.action = a;
-            mojo.resolveAction();
-            assertThat(mojo.action).as("action=%s must not be mutated", a).isEqualTo(a);
-        }
-    }
-
-    @Test
-    void resolveActionPreservesTuiWhenInteractive() {
-        var mojo = new AlignMojo() {
-            @Override
-            boolean isHeadless() {
-                return false;
-            }
-        };
-        mojo.resolveAction();
-        assertThat(mojo.action).isEqualTo("tui");
+    void rejectsTuiAction() {
+        var mojo = new AlignMojo();
+        mojo.action = "tui";
+        assertThatThrownBy(mojo::execute)
+                .isInstanceOf(MojoExecutionException.class)
+                .hasMessageContaining("Invalid action 'tui'");
     }
 
     // --- buildOptions ---

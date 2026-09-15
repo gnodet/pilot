@@ -129,16 +129,20 @@ class TreeDiffClassifierTest {
 
     @Test
     void nonJarExtensionIncludedInKey() {
-        // foo:bar:zip and foo:bar (jar) should be distinct entries
+        // foo:bar (jar) and foo:bar (zip) should be distinct siblings — different extensions, same GA
         var root1 = node("g", "app", "1.0", 0);
-        root1.children.add(nodeWithClassifier("foo", "bar", "", "zip", "1.0", 1));
+        root1.children.add(node("foo", "bar", "1.0", 1)); // plain jar
+        root1.children.add(nodeWithClassifier("foo", "bar", "", "zip", "1.0", 1)); // zip variant
 
         var root2 = node("g", "app", "1.0", 0);
-        root2.children.add(nodeWithClassifier("foo", "bar", "", "zip", "2.0", 1)); // upgraded
+        root2.children.add(node("foo", "bar", "2.0", 1)); // upgraded jar
+        root2.children.add(nodeWithClassifier("foo", "bar", "", "zip", "2.0", 1)); // upgraded zip
 
         List<TreeDiff.DiffEntry> diff = TreeDiff.diff(tree(root1), tree(root2));
 
-        assertThat(diff.stream().filter(e -> e.side() == TreeDiff.Side.LEFT)).hasSize(1);
-        assertThat(diff.stream().filter(e -> e.side() == TreeDiff.Side.RIGHT)).hasSize(1);
+        // root:SAME; bar-jar: LEFT+RIGHT; bar-zip: LEFT+RIGHT → 5 total
+        assertThat(diff).hasSize(5);
+        assertThat(diff.stream().filter(e -> e.side() == TreeDiff.Side.LEFT)).hasSize(2);
+        assertThat(diff.stream().filter(e -> e.side() == TreeDiff.Side.RIGHT)).hasSize(2);
     }
 }

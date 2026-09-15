@@ -115,8 +115,8 @@ public class PluginsTui extends ToolPanel {
     private static final String KEY_NAV = ":Nav  ";
     private static final String CHECKING_VERSIONS = "Checking versions\u2026";
 
-    private final List<PluginEntry> plugins;
-    private final List<PluginEntry> managed;
+    final List<PluginEntry> plugins;
+    final List<PluginEntry> managed;
     private final List<PluginEntry> updates = new ArrayList<>();
     private final boolean singleModule;
     private final UpdatesTui.VersionResolver versionResolver;
@@ -188,7 +188,14 @@ public class PluginsTui extends ToolPanel {
         all.addAll(plugins);
         all.addAll(managed);
 
-        // Deduplicate by GA
+        // Build a GA → all entries map so version results can be propagated to both
+        // declared and managed entries that share the same GA.
+        Map<String, List<PluginEntry>> allByGa = new LinkedHashMap<>();
+        for (PluginEntry e : all) {
+            allByGa.computeIfAbsent(e.ga(), k -> new ArrayList<>()).add(e);
+        }
+
+        // Deduplicate by GA — resolve versions once per GA
         Map<String, PluginEntry> deduped = new LinkedHashMap<>();
         for (PluginEntry e : all) {
             deduped.putIfAbsent(e.ga(), e);
@@ -205,7 +212,7 @@ public class PluginsTui extends ToolPanel {
             CompletableFuture.supplyAsync(
                             () -> versionResolver.resolveVersions(entry.groupId, entry.artifactId), httpPool)
                     .thenAccept(versions -> runner.runOnRenderThread(() -> {
-                        applyVersionResult(entry, versions);
+                        applyVersionResult(allByGa.getOrDefault(entry.ga(), List.of(entry)), versions);
                         loadedCount++;
                         if (loadedCount >= toResolve.size()) {
                             onVersionsComplete(toResolve);
@@ -224,15 +231,17 @@ public class PluginsTui extends ToolPanel {
         }
     }
 
-    private void applyVersionResult(PluginEntry entry, List<String> versions) {
-        versions.stream()
-                .filter(v -> !VersionComparator.isPreview(v))
-                .filter(v -> entry.version.isEmpty() || VersionComparator.isNewer(entry.version, v))
-                .findFirst()
-                .ifPresent(v -> {
-                    entry.newestVersion = v;
-                    entry.updateType = VersionComparator.classify(entry.version, v);
-                });
+    private void applyVersionResult(List<PluginEntry> entries, List<String> versions) {
+        for (PluginEntry entry : entries) {
+            versions.stream()
+                    .filter(v -> !VersionComparator.isPreview(v))
+                    .filter(v -> entry.version.isEmpty() || VersionComparator.isNewer(entry.version, v))
+                    .findFirst()
+                    .ifPresent(v -> {
+                        entry.newestVersion = v;
+                        entry.updateType = VersionComparator.classify(entry.version, v);
+                    });
+        }
     }
 
     private void onVersionsComplete(List<PluginEntry> resolved) {
@@ -245,7 +254,13 @@ public class PluginsTui extends ToolPanel {
         }
         applyFilter();
         statusText = buildStatusMessage();
-        fetchReleaseDates(resolved);
+        // Fetch release dates for all entries (plugins + managed) so every view
+        // shows lib-year data, including managed entries that share a GA with a
+        // declared entry and were not in the deduplicated resolution list.
+        List<PluginEntry> allEntries = new ArrayList<>();
+        allEntries.addAll(plugins);
+        allEntries.addAll(managed);
+        fetchReleaseDates(allEntries);
     }
 
     private void applyFilter() {

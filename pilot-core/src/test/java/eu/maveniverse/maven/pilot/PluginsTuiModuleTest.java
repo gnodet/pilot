@@ -121,10 +121,13 @@ class PluginsTuiModuleTest {
 
         PluginsTui tui = createTui(p1, List.of(p1, p2));
 
-        // The plugin entry should see a conflict (3.11.0 vs 3.12.0 from two distinct modules)
-        // We verify this indirectly by rendering — it should not throw
-        String output = TuiTestHelper.render(tui::renderStandalone);
-        assertThat(output).isNotEmpty();
+        // The plugin entry should see both modules as distinct keys and report a conflict
+        PluginsTui.PluginEntry entry = tui.plugins.stream()
+                .filter(e -> "maven-compiler-plugin".equals(e.artifactId))
+                .findFirst()
+                .orElseThrow();
+        assertThat(entry.moduleVersions).containsOnlyKeys("com.group1:app", "com.group2:app");
+        assertThat(entry.hasVersionConflict()).isTrue();
     }
 
     @Test
@@ -149,8 +152,12 @@ class PluginsTuiModuleTest {
 
         PluginsTui tui = createTui(p1, List.of(p1, p2));
         // Module list for the plugin should contain both ga() keys (not both mapped to "module-a")
-        String output = TuiTestHelper.render(tui::renderStandalone);
-        assertThat(output).isNotEmpty();
+        PluginsTui.PluginEntry entry = tui.plugins.stream()
+                .filter(e -> "maven-compiler-plugin".equals(e.artifactId))
+                .findFirst()
+                .orElseThrow();
+        assertThat(entry.moduleVersions).containsOnlyKeys("com.example:module-a", "com.example:module-b");
+        assertThat(entry.hasVersionConflict()).isTrue();
     }
 
     // --- Sorting in all three views ---

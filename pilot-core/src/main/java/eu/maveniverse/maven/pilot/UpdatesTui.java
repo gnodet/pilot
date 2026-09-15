@@ -1023,7 +1023,7 @@ public class UpdatesTui extends ToolPanel {
      * Resolve the selected row to a single dep and label for tree-impact computation.
      * Returns {@code null} and sets {@link #status} if no update is available.
      */
-    private ImpactTarget resolveImpactTarget(ReactorRow row) {
+    ImpactTarget resolveImpactTarget(ReactorRow row) {
         if (row.isGroupHeader()) {
             ReactorCollector.PropertyGroup pg = row.propertyGroup;
             if (!pg.hasUpdate()) {

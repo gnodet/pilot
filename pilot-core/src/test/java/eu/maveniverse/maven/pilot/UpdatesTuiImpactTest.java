@@ -20,6 +20,7 @@ package eu.maveniverse.maven.pilot;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.tamboui.tui.event.KeyEvent;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -67,6 +68,14 @@ class UpdatesTuiImpactTest {
         return new UpdatesTui(result, model, "com.example:app:1.0", (g, a) -> List.of());
     }
 
+    private UpdatesTui createTuiWithImpactResolver(
+            ReactorCollector.CollectionResult result, List<PilotProject> projects) {
+        ReactorModel model = ReactorModel.build(projects);
+        // Resolver that returns an empty tree — impact is resolvable but yields no diff
+        UpdatesTui.TreeImpactResolver resolver = (g, a, oldV, newV) -> List.of();
+        return new UpdatesTui(result, model, "com.example:app:1.0", (grp, art) -> List.of(), resolver, null);
+    }
+
     // --- resolveImpactTarget: dependency row with no update ---
 
     @Test
@@ -91,12 +100,13 @@ class UpdatesTuiImpactTest {
         ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
         UpdatesTui tui = createTui(result, List.of(project));
 
-        // No update set → status must report unavailability, not crash
+        // No update available — dep not in display rows (ALL filter requires hasUpdate())
         tui.loading = false;
         tui.buildDisplayRows();
-        // Status shows loading/ready; showTreeImpact sets status to "No update available"
-        // We can only verify it doesn't throw from the public API
-        assertThat(tui.status()).isNotNull();
+
+        // When no resolver is configured, pressing 't' sets status synchronously
+        tui.handleKeyEvent(KeyEvent.ofChar('t'));
+        assertThat(tui.status()).isEqualTo("Tree impact not available");
     }
 
     // --- ReactorRow.group(): group header with update ---

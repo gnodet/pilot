@@ -109,7 +109,7 @@ class DependenciesTuiViewSwitchTest {
     }
 
     @Test
-    void subViewCountReflectsPresenceOfManagedDeps() throws IOException {
+    void subViewCountIsThreeWithoutTreePanel() throws IOException {
         Path pom = pomPath();
         DependenciesTui tuiNoManaged =
                 new DependenciesTui(List.of(), List.of(), pom.toString(), "com.example:app:1.0", false);

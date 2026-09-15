@@ -21,16 +21,13 @@ package eu.maveniverse.maven.pilot.mvn3;
 import eu.maveniverse.domtrip.Document;
 import eu.maveniverse.domtrip.maven.AlignOptions;
 import eu.maveniverse.domtrip.maven.PomEditor;
-import eu.maveniverse.maven.pilot.*;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFileAttributeView;
-import java.util.List;
 import java.util.Locale;
-import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -39,22 +36,21 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.project.MavenProject;
 
 /**
- * Detect and align dependency conventions across the POM — interactive TUI or headless
- * report/check/fix modes.
+ * Detect and align dependency conventions across the POM — report/check/fix modes.
  *
- * <p>Four actions via {@code -Dpilot.action}:</p>
+ * <p>Three actions via {@code -Dpilot.action}:</p>
  * <ul>
- *   <li><b>tui</b> (default) — interactive TUI for choosing target conventions and previewing
- *       changes</li>
- *   <li><b>report</b> — prints a diff of what would change, exits 0</li>
+ *   <li><b>report</b> (default) — prints a diff of what would change, exits 0</li>
  *   <li><b>check</b> — same as report but fails the build if any changes would be made</li>
  *   <li><b>fix</b> — applies alignment and writes the POM file in-place</li>
  * </ul>
  *
+ * <p>Runs once per module in a multi-module reactor. For an interactive TUI,
+ * use {@code pilot:pilot} instead.</p>
+ *
  * <p>Usage:</p>
  * <pre>
  * mvn pilot:align
- * mvn pilot:align -Dpilot.action=report
  * mvn pilot:align -Dpilot.action=check
  * mvn pilot:align -Dpilot.action=fix
  * mvn pilot:align -Dpilot.action=fix -Dpilot.versionStyle=MANAGED -Dpilot.versionSource=PROPERTY
@@ -68,17 +64,13 @@ public class AlignMojo extends AbstractMojo {
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
     private MavenProject project;
 
-    @Parameter(defaultValue = "${session}", readonly = true, required = true)
-    private MavenSession session;
-
     /**
-     * Action to perform: {@code tui} (default) launches the interactive TUI;
-     * {@code report} prints a diff of alignment changes without failing;
-     * {@code check} reports changes and fails the build if any are found;
+     * Action to perform: {@code report} (default) prints a diff of alignment changes without
+     * failing; {@code check} reports changes and fails the build if any are found;
      * {@code fix} applies the alignment and writes the POM in-place.
      */
-    @Parameter(property = "pilot.action", defaultValue = "tui")
-    String action = "tui";
+    @Parameter(property = "pilot.action", defaultValue = "report")
+    String action = "report";
 
     /**
      * Target version style for headless modes. One of: {@code INLINE}, {@code MANAGED}.
@@ -104,11 +96,9 @@ public class AlignMojo extends AbstractMojo {
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
-        if (!("tui".equals(action) || "report".equals(action) || "check".equals(action) || "fix".equals(action))) {
-            throw new MojoExecutionException(
-                    "Invalid action '" + action + "'. Use 'tui', 'report', 'check', or 'fix'.");
+        if (!("report".equals(action) || "check".equals(action) || "fix".equals(action))) {
+            throw new MojoExecutionException("Invalid action '" + action + "'. Use 'report', 'check', or 'fix'.");
         }
-        resolveAction();
         try {
             executeForProject(project);
         } catch (MojoExecutionException | MojoFailureException e) {
@@ -118,68 +108,34 @@ public class AlignMojo extends AbstractMojo {
         }
     }
 
-    /**
-     * Falls back from {@code tui} to {@code report} in non-interactive environments.
-     * Package-private for testing.
-     */
-    void resolveAction() {
-        if ("tui".equals(action) && isHeadless()) {
-            getLog().info("Non-interactive environment detected; falling back to action=report"
-                    + " (use -Dpilot.action=report to suppress this message).");
-            action = "report";
-        }
-    }
-
-    /**
-     * Returns {@code true} when running in a non-interactive (headless) environment.
-     * Package-private for testing.
-     */
-    boolean isHeadless() {
-        return !session.getRequest().isInteractiveMode() || System.console() == null;
-    }
-
     private void executeForProject(MavenProject proj) throws Exception {
         String pomPath = proj.getFile().getAbsolutePath();
         String pomContent = Files.readString(Path.of(pomPath));
         PomEditor editor = new PomEditor(Document.of(pomContent));
         AlignOptions detectedOptions = editor.dependencies().detectConventions();
 
-        if ("tui".equals(action)) {
-            String gav = proj.getGroupId() + ":" + proj.getArtifactId() + ":" + proj.getVersion();
-            List<PilotProject> pilotProjects = MojoHelper.toPilotProjects(session.getProjects());
-            PilotProject pilotProj = pilotProjects.stream()
-                    .filter(p ->
-                            p.pomPath != null && p.pomPath.equals(proj.getFile().toPath()))
-                    .findFirst()
-                    .orElse(pilotProjects.get(0));
-            AlignTui.ParentPomInfo parentInfo = AlignHelper.findParentPomInfo(pilotProj, pilotProjects);
-            AlignTui tui = new AlignTui(pomPath, gav, detectedOptions, parentInfo);
-            tui.runStandalone();
-        } else {
-            AlignOptions opts = buildOptions(detectedOptions);
-            // Re-read so count and aligned content come from the same editor pass
-            PomEditor applyEditor = new PomEditor(Document.of(pomContent));
-            int count = applyEditor.dependencies().alignAllDependencies(opts);
-            String aligned = applyEditor.toXml();
+        AlignOptions opts = buildOptions(detectedOptions);
+        PomEditor applyEditor = new PomEditor(Document.of(pomContent));
+        int count = applyEditor.dependencies().alignAllDependencies(opts);
+        String aligned = applyEditor.toXml();
 
-            if (count == 0) {
-                getLog().info("No alignment changes needed.");
-                return;
-            }
+        if (count == 0) {
+            getLog().info("No alignment changes needed.");
+            return;
+        }
 
-            String diff = buildDiff(pomContent, aligned);
-            switch (action) {
-                case "report" -> getLog().info(diff);
-                case "check" ->
-                    throw new MojoFailureException(count
-                            + " alignment change(s) would be made. Run with -Dpilot.action=fix to apply.\n" + diff);
-                case "fix" -> {
-                    getLog().info(diff);
-                    writePom(Path.of(pomPath), aligned);
-                    getLog().info("Applied " + count + " alignment change(s) to " + pomPath);
-                }
-                default -> throw new MojoExecutionException("Unexpected action: " + action);
+        String diff = buildDiff(pomContent, aligned);
+        switch (action) {
+            case "report" -> getLog().info(diff);
+            case "check" ->
+                throw new MojoFailureException(
+                        count + " alignment change(s) would be made. Run with -Dpilot.action=fix to apply.\n" + diff);
+            case "fix" -> {
+                getLog().info(diff);
+                writePom(Path.of(pomPath), aligned);
+                getLog().info("Applied " + count + " alignment change(s) to " + pomPath);
             }
+            default -> throw new MojoExecutionException("Unexpected action: " + action);
         }
     }
 
@@ -226,12 +182,6 @@ public class AlignMojo extends AbstractMojo {
 
     /**
      * Produces a simple before/after diff for logging.
-     *
-     * <p>Uses a positional line comparison (line N before vs line N after), which is accurate
-     * when alignment changes are few isolated lines. If an insertion or deletion shifts many
-     * subsequent lines, the diff may show unchanged lines as false +/- pairs. For typical POM
-     * alignment this is acceptable; for a fully accurate unified diff a Myers/LCS algorithm
-     * would be needed.
      */
     private String buildDiff(String before, String after) {
         String[] beforeLines = before.split("\\r?\\n", -1);
@@ -256,7 +206,6 @@ public class AlignMojo extends AbstractMojo {
     private void writePom(Path target, String content) throws IOException {
         Path tmp = Files.createTempFile(target.getParent(), target.getFileName() + ".pilot-align-", ".tmp");
         try {
-            // Preserve POSIX permissions from the original POM (best-effort; no-op on non-POSIX fs)
             var posixTarget = Files.getFileAttributeView(target, PosixFileAttributeView.class);
             if (posixTarget != null) {
                 var posixTmp = Files.getFileAttributeView(tmp, PosixFileAttributeView.class);

@@ -20,7 +20,6 @@ package eu.maveniverse.maven.pilot.mvn3;
 
 import eu.maveniverse.maven.pilot.*;
 import javax.inject.Inject;
-import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -32,23 +31,16 @@ import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.collection.CollectResult;
 
 /**
- * Browse the project dependency tree — interactive TUI or headless text report.
+ * Print the project dependency tree as plain text.
  *
- * <p>Two actions via {@code -Dpilot.action}:</p>
- * <ul>
- *   <li><b>tui</b> (default) — interactive TUI with expand/collapse, conflict highlighting,
- *       scope filtering, and reverse path lookup</li>
- *   <li><b>report</b> — prints the dependency tree as plain text and exits 0</li>
- * </ul>
- *
- * <p>{@code check} and {@code fix} are not meaningful for a tree view and will throw an error.</p>
+ * <p>Runs once per module in a multi-module reactor. For an interactive TUI with
+ * expand/collapse, conflict highlighting, scope filtering, and reverse-path lookup,
+ * use {@code pilot:pilot} instead.</p>
  *
  * <p>Usage:</p>
  * <pre>
  * mvn pilot:tree
- * mvn pilot:tree -Dscope=compile
- * mvn pilot:tree -Dpilot.action=report
- * mvn pilot:tree -Dpilot.action=report -Dscope=test
+ * mvn pilot:tree -Dscope=test
  * </pre>
  *
  * @since 0.1.0
@@ -58,9 +50,6 @@ public class TreeMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
     private MavenProject project;
-
-    @Parameter(defaultValue = "${session}", readonly = true, required = true)
-    private MavenSession session;
 
     @Parameter(defaultValue = "${repositorySystemSession}", readonly = true, required = true)
     private RepositorySystemSession repoSession;
@@ -74,25 +63,8 @@ public class TreeMojo extends AbstractMojo {
     @Parameter(property = "scope", defaultValue = "compile")
     private String scope;
 
-    /**
-     * Action to perform: {@code tui} (default) launches the interactive TUI;
-     * {@code report} prints the dependency tree as plain text.
-     * {@code check} and {@code fix} are not supported and will fail.
-     */
-    @Parameter(property = "pilot.action", defaultValue = "tui")
-    String action = "tui";
-
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
-        if (!"tui".equals(action) && !"report".equals(action) && !"check".equals(action) && !"fix".equals(action)) {
-            throw new MojoExecutionException(
-                    "Invalid action '" + action + "'. Use 'tui' or 'report' (check/fix are not supported for tree).");
-        }
-        if ("check".equals(action) || "fix".equals(action)) {
-            throw new MojoExecutionException(
-                    "Action '" + action + "' is not supported for pilot:tree — use 'tui' or 'report'.");
-        }
-        resolveAction();
         try {
             executeForProject(project);
         } catch (MojoExecutionException | MojoFailureException e) {
@@ -102,41 +74,15 @@ public class TreeMojo extends AbstractMojo {
         }
     }
 
-    /**
-     * Falls back from {@code tui} to {@code report} in non-interactive environments.
-     * Package-private for testing.
-     */
-    void resolveAction() {
-        if ("tui".equals(action) && isHeadless()) {
-            getLog().info("Non-interactive environment detected; falling back to action=report"
-                    + " (use -Dpilot.action=report to suppress this message).");
-            action = "report";
-        }
-    }
-
-    /**
-     * Returns true when the environment has no interactive terminal.
-     * Package-private for testing.
-     */
-    boolean isHeadless() {
-        return !session.getRequest().isInteractiveMode() || System.console() == null;
-    }
-
     private void executeForProject(MavenProject proj) throws Exception {
         CollectResult result = repoSystem.collectDependencies(repoSession, MojoHelper.buildCollectRequest(proj));
         String gav = proj.getGroupId() + ":" + proj.getArtifactId() + ":" + proj.getVersion();
         DependencyTreeModel treeModel = MojoHelper.fromDependencyNode(result.getRoot());
-
-        if ("report".equals(action)) {
-            DependencyTreeModel filtered = treeModel.filterByScope(scope);
-            StringBuilder sb = new StringBuilder();
-            sb.append(gav).append("\n");
-            renderTextTree(filtered.root, sb, "");
-            getLog().info(sb.toString());
-        } else {
-            TreeTui tui = new TreeTui(treeModel, scope, gav);
-            tui.runStandalone();
-        }
+        DependencyTreeModel filtered = treeModel.filterByScope(scope);
+        StringBuilder sb = new StringBuilder();
+        sb.append(gav).append("\n");
+        renderTextTree(filtered.root, sb, "");
+        getLog().info(sb.toString());
     }
 
     /**

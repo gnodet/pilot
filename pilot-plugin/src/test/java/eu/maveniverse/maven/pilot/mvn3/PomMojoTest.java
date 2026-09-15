@@ -20,8 +20,8 @@ package eu.maveniverse.maven.pilot.mvn3;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.io.File;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
@@ -49,7 +49,7 @@ class PomMojoTest {
     @Test
     void throwsWhenPomFileNotReadable() throws Exception {
         MavenProject project = new MavenProject();
-        project.setFile(new File("/nonexistent/path/pom.xml"));
+        project.setFile(Path.of("/nonexistent/path/pom.xml").toFile());
 
         PomMojo mojo = new PomMojo();
         MojoTestHelper.setField(mojo, "project", project);

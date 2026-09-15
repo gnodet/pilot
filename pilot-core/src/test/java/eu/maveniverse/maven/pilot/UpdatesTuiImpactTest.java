@@ -181,6 +181,40 @@ class UpdatesTuiImpactTest {
         UpdatesTui.ImpactTarget target = tui.resolveImpactTarget(row);
         assertThat(target).isNotNull();
         assertThat(target.dep()).isSameAs(dep);
+        assertThat(target.newVersion()).isEqualTo("6.2.0");
+        assertThat(target.label()).contains("spring.version").contains("6.1.0").contains("6.2.0");
+    }
+
+    /**
+     * When deps in a property group resolve to different newest versions, pg.newestVersion is the
+     * group maximum (MAX across all deps). ImpactTarget.newVersion() must use pg.newestVersion so
+     * that the computation matches the displayed label, not dep.newestVersion which may be lower.
+     */
+    @Test
+    void resolveImpactTargetForGroupHeaderUsesGroupMaxVersion() throws IOException {
+        var group = new ReactorCollector.PropertyGroup("spring.version", "${spring.version}", "6.1.0", null);
+        group.newestVersion = "6.2.0"; // group maximum
+        // First dep resolved to a lower version; second dep resolved to the group max
+        var dep1 = new ReactorCollector.AggregatedDependency("org.springframework", "spring-core");
+        dep1.primaryVersion = "6.1.0";
+        dep1.newestVersion = "6.1.5"; // lower than group max — this dep is picked first by findFirst()
+        var dep2 = new ReactorCollector.AggregatedDependency("org.springframework", "spring-context");
+        dep2.primaryVersion = "6.1.0";
+        dep2.newestVersion = "6.2.0";
+        group.dependencies.add(dep1);
+        group.dependencies.add(dep2);
+        var row = UpdatesTui.ReactorRow.group(group);
+
+        Path dir = subdir("group-max-version");
+        PilotProject project = createProject("com.example", "app", "1.0", dir);
+        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
+        UpdatesTui tui = createTui(result, List.of(project));
+
+        UpdatesTui.ImpactTarget target = tui.resolveImpactTarget(row);
+        assertThat(target).isNotNull();
+        // dep1 is selected (first with non-null newestVersion), but newVersion must be the group max
+        assertThat(target.dep()).isSameAs(dep1);
+        assertThat(target.newVersion()).isEqualTo("6.2.0"); // pg.newestVersion, not dep1.newestVersion ("6.1.5")
         assertThat(target.label()).contains("spring.version").contains("6.1.0").contains("6.2.0");
     }
 
@@ -199,6 +233,7 @@ class UpdatesTuiImpactTest {
         UpdatesTui.ImpactTarget target = tui.resolveImpactTarget(row);
         assertThat(target).isNotNull();
         assertThat(target.dep()).isSameAs(dep);
+        assertThat(target.newVersion()).isEqualTo("2.0");
         assertThat(target.label()).contains("com.example:lib").contains("1.0").contains("2.0");
     }
 

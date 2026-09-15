@@ -1017,7 +1017,7 @@ public class UpdatesTui extends ToolPanel {
         status = changes == 0 ? "No changes to show" : changes + " line(s) changed across " + diffs.size() + " file(s)";
     }
 
-    record ImpactTarget(ReactorCollector.AggregatedDependency dep, String label) {}
+    record ImpactTarget(ReactorCollector.AggregatedDependency dep, String newVersion, String label) {}
 
     /**
      * Resolve the selected row to a single dep and label for tree-impact computation.
@@ -1038,7 +1038,12 @@ public class UpdatesTui extends ToolPanel {
                 status = "No dependency in group has a resolved update";
                 return null;
             }
-            return new ImpactTarget(dep, "${" + pg.propertyName + "} " + pg.resolvedVersion + " → " + pg.newestVersion);
+            // Use pg.newestVersion (group maximum) for both the label and the computation,
+            // not dep.newestVersion (which may be a lower version from a different dep).
+            return new ImpactTarget(
+                    dep,
+                    pg.newestVersion,
+                    "${" + pg.propertyName + "} " + pg.resolvedVersion + " → " + pg.newestVersion);
         }
         if (row.dependency == null || row.dependency.newestVersion == null) {
             status = "No update available for tree impact";
@@ -1046,6 +1051,7 @@ public class UpdatesTui extends ToolPanel {
         }
         return new ImpactTarget(
                 row.dependency,
+                row.dependency.newestVersion,
                 row.dependency.ga() + " " + row.dependency.primaryVersion + " → " + row.dependency.newestVersion);
     }
 
@@ -1066,7 +1072,7 @@ public class UpdatesTui extends ToolPanel {
                                 target.dep().groupId,
                                 target.dep().artifactId,
                                 target.dep().primaryVersion,
-                                target.dep().newestVersion),
+                                target.newVersion()),
                         httpPool)
                 .thenAccept(entries -> runner.runOnRenderThread(() -> {
                     if (gen != treeImpactGeneration.get()) return; // stale result, discard

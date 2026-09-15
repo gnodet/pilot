@@ -215,7 +215,7 @@ public class PluginsTui extends ToolPanel {
                         applyVersionResult(allByGa.getOrDefault(entry.ga(), List.of(entry)), versions);
                         loadedCount++;
                         if (loadedCount >= toResolve.size()) {
-                            onVersionsComplete(toResolve);
+                            onVersionsComplete();
                         }
                     }))
                     .exceptionally(ex -> {
@@ -223,7 +223,7 @@ public class PluginsTui extends ToolPanel {
                             loadedCount++;
                             failedCount++;
                             if (loadedCount >= toResolve.size()) {
-                                onVersionsComplete(toResolve);
+                                onVersionsComplete();
                             }
                         });
                         return null;
@@ -244,7 +244,7 @@ public class PluginsTui extends ToolPanel {
         }
     }
 
-    private void onVersionsComplete(List<PluginEntry> resolved) {
+    private void onVersionsComplete() {
         loading = false;
         applyFilter();
         statusText = buildStatusMessage();

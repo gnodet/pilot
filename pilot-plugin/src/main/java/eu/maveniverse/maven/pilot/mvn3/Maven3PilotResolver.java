@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Logger;
 import org.apache.maven.model.io.xpp3.MavenXpp3Writer;
 import org.apache.maven.project.MavenProject;
 import org.eclipse.aether.DefaultRepositorySystemSession;
@@ -47,6 +48,8 @@ import org.eclipse.aether.util.graph.manager.DependencyManagerUtils;
  * {@link RepositorySystem} and existing {@link MavenProject} instances.
  */
 class Maven3PilotResolver implements PilotResolver {
+
+    private static final Logger LOGGER = Logger.getLogger(Maven3PilotResolver.class.getName());
 
     private final RepositorySystem repoSystem;
     private final RepositorySystemSession repoSession;
@@ -152,6 +155,8 @@ class Maven3PilotResolver implements PilotResolver {
             CollectResult result = repoSystem.collectDependencies(verboseSession, collectRequest);
             return MojoHelper.fromDependencyNode(result.getRoot());
         } catch (Exception e) {
+            LOGGER.warning("collectManagedDependencyTree failed for " + mp.getGroupId() + ":" + mp.getArtifactId() + ":"
+                    + mp.getVersion() + ": " + e.getMessage());
             return emptyTree(mp);
         }
     }

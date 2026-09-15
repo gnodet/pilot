@@ -51,6 +51,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -142,6 +143,9 @@ public class UpdatesTui extends ToolPanel {
     Set<String> duplicatePropertyNames = Set.of();
     private Filter filter = Filter.ALL;
     private final DiffOverlay treeImpactOverlay = new DiffOverlay();
+    /** Monotonically increasing; each showTreeImpact() call captures its own value. */
+    private final AtomicInteger treeImpactGeneration = new AtomicInteger();
+
     private final Set<PomEditSession> mutatedSessions = new LinkedHashSet<>();
     private final TableState detailTableState = new TableState();
     boolean showDetails = true;
@@ -1054,6 +1058,7 @@ public class UpdatesTui extends ToolPanel {
         if (target == null) return;
 
         status = "Computing tree impact for " + target.label() + "…";
+        final int gen = treeImpactGeneration.incrementAndGet();
         CompletableFuture.supplyAsync(
                         () -> treeImpactResolver.computeImpact(
                                 target.dep().groupId,
@@ -1062,6 +1067,7 @@ public class UpdatesTui extends ToolPanel {
                                 target.dep().newestVersion),
                         httpPool)
                 .thenAccept(entries -> runner.runOnRenderThread(() -> {
+                    if (gen != treeImpactGeneration.get()) return; // stale result, discard
                     if (entries.isEmpty() || entries.stream().allMatch(e -> e.side() == TreeDiff.Side.SAME)) {
                         status = "No transitive changes for " + target.label();
                     } else {
@@ -1070,8 +1076,10 @@ public class UpdatesTui extends ToolPanel {
                     }
                 }))
                 .exceptionally(ex -> {
-                    runner.runOnRenderThread(
-                            () -> status = "Tree impact failed for " + target.label() + ": " + ex.getMessage());
+                    runner.runOnRenderThread(() -> {
+                        if (gen != treeImpactGeneration.get()) return; // stale, discard
+                        status = "Tree impact failed for " + target.label() + ": " + ex.getMessage();
+                    });
                     return null;
                 });
     }

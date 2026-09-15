@@ -157,7 +157,7 @@ public class PluginsTui extends ToolPanel {
 
     private static void collectPlugins(
             PilotProject p, Map<String, PluginEntry> pluginsMap, Map<String, PluginEntry> managedMap) {
-        String moduleName = p.artifactId;
+        String moduleName = p.ga();
         for (PilotProject.Plugin plugin : p.getPlugins()) {
             PluginEntry entry = pluginsMap.computeIfAbsent(
                     plugin.ga(), k -> new PluginEntry(plugin.groupId(), plugin.artifactId(), plugin.version(), false));

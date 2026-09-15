@@ -58,6 +58,17 @@ public final class TreeDiff {
         return result;
     }
 
+    private static String nodeKey(DependencyTreeModel.TreeNode node) {
+        String key = node.ga();
+        if (node.classifier != null && !node.classifier.isEmpty()) {
+            key += ":" + node.classifier;
+        }
+        if (node.extension != null && !node.extension.isEmpty() && !"jar".equals(node.extension)) {
+            key += "@" + node.extension;
+        }
+        return key;
+    }
+
     private static void diffNodes(
             DependencyTreeModel.TreeNode left, DependencyTreeModel.TreeNode right, List<DiffEntry> result) {
         // Emit the root / current pair
@@ -68,21 +79,21 @@ public final class TreeDiff {
             result.add(new DiffEntry(right.ga(), right.version, right.depth, Side.RIGHT));
         }
 
-        // Match children by GA identity
+        // Match children by GA+classifier+extension identity
         List<DependencyTreeModel.TreeNode> leftChildren = left.children;
         List<DependencyTreeModel.TreeNode> rightChildren = right.children;
 
-        // Build GA → node maps (first occurrence wins, preserving order)
+        // Build node-key → node maps (first occurrence wins, preserving order)
         Map<String, DependencyTreeModel.TreeNode> leftByGa = new LinkedHashMap<>();
         for (DependencyTreeModel.TreeNode c : leftChildren) {
-            leftByGa.putIfAbsent(c.ga(), c);
+            leftByGa.putIfAbsent(nodeKey(c), c);
         }
         Map<String, DependencyTreeModel.TreeNode> rightByGa = new LinkedHashMap<>();
         for (DependencyTreeModel.TreeNode c : rightChildren) {
-            rightByGa.putIfAbsent(c.ga(), c);
+            rightByGa.putIfAbsent(nodeKey(c), c);
         }
 
-        // Unified GA order: left order first, then right-only additions
+        // Unified key order: left order first, then right-only additions
         List<String> order = new ArrayList<>(leftByGa.keySet());
         for (String ga : rightByGa.keySet()) {
             if (!leftByGa.containsKey(ga)) {

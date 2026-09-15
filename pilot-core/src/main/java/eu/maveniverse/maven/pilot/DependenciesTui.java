@@ -45,6 +45,7 @@ import eu.maveniverse.domtrip.maven.Coordinates;
 import eu.maveniverse.domtrip.maven.PomEditor;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -219,7 +220,19 @@ public class DependenciesTui extends ToolPanel {
         MANAGED,
         DM_TREE,
         UNUSED_DECLARED,
-        USED_TRANSITIVE
+        USED_TRANSITIVE;
+
+        String label() {
+            return switch (this) {
+                case TREE -> "Tree";
+                case DECLARED -> "Declared";
+                case TRANSITIVE -> "Transitive";
+                case MANAGED -> "Managed";
+                case DM_TREE -> "DM Tree";
+                case UNUSED_DECLARED -> "Unused Declared";
+                case USED_TRANSITIVE -> "Used Transitive";
+            };
+        }
     }
 
     private final TreeTui treeTui;
@@ -732,6 +745,11 @@ public class DependenciesTui extends ToolPanel {
         return spans;
     }
 
+    private String viewSwitchHint() {
+        String labels = Arrays.stream(views).map(View::label).collect(Collectors.joining(" / "));
+        return "1-" + views.length + "             Switch " + labels + " view";
+    }
+
     @Override
     public List<HelpOverlay.Section> helpSections() {
         List<HelpOverlay.Section> sections = new ArrayList<>();
@@ -762,8 +780,7 @@ public class DependenciesTui extends ToolPanel {
 
                 ## Dependencies Actions
                 ↑ / ↓           Move selection up / down
-                """ + "1-" + views.length + """
-             Switch Declared / Transitive / Managed view
+                """ + viewSwitchHint() + "\n" + """
                 x / Enter       Remove selected (Declared view)
                 a / Enter       Add to POM (Transitive view)
                 x               Remove managed entry (Managed view)
@@ -1184,8 +1201,7 @@ public class DependenciesTui extends ToolPanel {
         List<HelpOverlay.Section> sections = new ArrayList<>(helpSections());
         sections.addAll(HelpOverlay.parse("""
                 ## General
-                """ + NAV_KEYS + "                1-" + views.length + """
-             Switch between Declared, Transitive, and Managed views
+                """ + NAV_KEYS + viewSwitchHint() + "\n" + """
                 d               Preview POM changes as a unified diff
                 h               Toggle this help screen
                 q / Esc         Quit (prompts to save if modified)

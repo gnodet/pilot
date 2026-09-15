@@ -260,6 +260,41 @@ class PluginsTuiModuleTest {
         assertThat(output).isNotEmpty();
     }
 
+    // --- totalLibYears deduplicates by GA ---
+
+    @Test
+    void totalLibYearsDoesNotDoubleCountSharedGaEntries() throws IOException {
+        // When a declared plugin and a managed plugin share the same GA, the status
+        // bar libyear total should count that GA only once, not twice.
+        Path dir = subdir("libyears-dedup");
+        PilotProject.Plugin declared =
+                new PilotProject.Plugin("org.apache.maven.plugins", "maven-compiler-plugin", "3.11.0");
+        PilotProject.Plugin managed =
+                new PilotProject.Plugin("org.apache.maven.plugins", "maven-compiler-plugin", "3.11.0");
+        PilotProject project = createProject("com.example", "app", "1.0", dir, List.of(declared), List.of(managed));
+        PluginsTui tui = createTui(project, List.of(project));
+
+        // Simulate version resolution for both entries
+        for (PluginsTui.PluginEntry e : tui.plugins) {
+            e.newestVersion = "3.14.0";
+            e.updateType = VersionComparator.UpdateType.MINOR;
+            e.libYears = 1.5f;
+        }
+        for (PluginsTui.PluginEntry e : tui.managed) {
+            e.newestVersion = "3.14.0";
+            e.updateType = VersionComparator.UpdateType.MINOR;
+            // Simulate both entries having libYears set (the double-count bug scenario)
+            e.libYears = 1.5f;
+        }
+
+        tui.loading = false;
+        tui.applyFilter();
+
+        // Both entries appear in updates (size 2), but totalLibYears() must count the GA only once
+        assertThat(tui.updates).hasSize(2);
+        assertThat(tui.totalLibYears()).isEqualTo(1.5f);
+    }
+
     // --- applyFilter includes both declared and managed entries with same GA ---
 
     @Test

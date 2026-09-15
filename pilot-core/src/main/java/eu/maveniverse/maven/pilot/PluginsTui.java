@@ -41,10 +41,12 @@ import dev.tamboui.widgets.table.TableState;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.function.Consumer;
@@ -248,13 +250,12 @@ public class PluginsTui extends ToolPanel {
         loading = false;
         applyFilter();
         statusText = buildStatusMessage();
-        // Fetch release dates for all entries (plugins + managed) so every view
-        // shows lib-year data, including managed entries that share a GA with a
-        // declared entry and were not in the deduplicated resolution list.
-        List<PluginEntry> allEntries = new ArrayList<>();
-        allEntries.addAll(plugins);
-        allEntries.addAll(managed);
-        fetchReleaseDates(allEntries);
+        // Fetch release dates, deduplicating by GA to avoid double HTTP requests
+        // for plugins that appear in both declared and managed lists with the same GA.
+        Map<String, PluginEntry> datesByGa = new LinkedHashMap<>();
+        for (PluginEntry e : plugins) datesByGa.put(e.ga(), e);
+        for (PluginEntry e : managed) datesByGa.putIfAbsent(e.ga(), e);
+        fetchReleaseDates(new ArrayList<>(datesByGa.values()));
     }
 
     void applyFilter() {
@@ -354,10 +355,11 @@ public class PluginsTui extends ToolPanel {
         return msg;
     }
 
-    private float totalLibYears() {
+    float totalLibYears() {
         float total = 0;
+        Set<String> seen = new HashSet<>();
         for (PluginEntry e : updates) {
-            if (e.libYears >= 0) total += e.libYears;
+            if (e.libYears >= 0 && seen.add(e.ga())) total += e.libYears;
         }
         return total;
     }

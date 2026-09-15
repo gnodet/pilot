@@ -156,7 +156,11 @@ public class TreeMojo extends AbstractMojo {
 
     private String formatNode(DependencyTreeModel.TreeNode node) {
         StringBuilder sb = new StringBuilder();
-        sb.append(node.groupId).append(":").append(node.artifactId).append(":jar");
+        sb.append(node.groupId)
+                .append(":")
+                .append(node.artifactId)
+                .append(":")
+                .append(node.extension != null && !node.extension.isEmpty() ? node.extension : "jar");
         if (node.classifier != null && !node.classifier.isEmpty()) {
             sb.append(":").append(node.classifier);
         }

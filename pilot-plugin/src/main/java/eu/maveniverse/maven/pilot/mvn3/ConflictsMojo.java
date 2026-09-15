@@ -170,6 +170,18 @@ public class ConflictsMojo extends AbstractMojo {
 
     private void executeNonInteractive(List<ConflictsTui.ConflictGroup> conflicts, String gav)
             throws MojoFailureException {
+        // Retain only groups with a real version conflict: either multiple distinct requested
+        // versions, or at least one entry where the requested version differs from the resolved one.
+        conflicts = conflicts.stream()
+                .filter(group -> group.entries.stream()
+                                        .map(e -> e.requestedVersion)
+                                        .distinct()
+                                        .limit(2)
+                                        .count()
+                                > 1
+                        || group.entries.stream().anyMatch(e -> !e.requestedVersion.equals(e.resolvedVersion)))
+                .toList();
+
         if (conflicts.isEmpty()) {
             getLog().info("No dependency conflicts found in " + gav + ".");
             return;

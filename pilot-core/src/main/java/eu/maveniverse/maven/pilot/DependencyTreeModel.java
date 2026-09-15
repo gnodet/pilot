@@ -34,6 +34,7 @@ public class DependencyTreeModel {
         public final String groupId;
         public final String artifactId;
         public final String classifier;
+        public final String extension;
         public final String version;
         public final String scope;
         public final boolean optional;
@@ -45,7 +46,7 @@ public class DependencyTreeModel {
         public String repository; // repository id where this was resolved from
 
         public TreeNode(String groupId, String artifactId, String version, String scope, boolean optional, int depth) {
-            this(groupId, artifactId, "", version, scope, optional, depth);
+            this(groupId, artifactId, "", "", version, scope, optional, depth);
         }
 
         public TreeNode(
@@ -56,9 +57,22 @@ public class DependencyTreeModel {
                 String scope,
                 boolean optional,
                 int depth) {
+            this(groupId, artifactId, classifier, "", version, scope, optional, depth);
+        }
+
+        public TreeNode(
+                String groupId,
+                String artifactId,
+                String classifier,
+                String extension,
+                String version,
+                String scope,
+                boolean optional,
+                int depth) {
             this.groupId = groupId;
             this.artifactId = artifactId;
             this.classifier = classifier;
+            this.extension = extension;
             this.version = version;
             this.scope = scope != null ? scope : SCOPE_COMPILE;
             this.optional = optional;

@@ -237,7 +237,7 @@ public final class MojoHelper {
             Set<String> includedScopes) {
         counter[0]++;
 
-        String groupId, artifactId, classifier, version, scope;
+        String groupId, artifactId, classifier, extension, version, scope;
         boolean optional = false;
 
         if (node.getDependency() != null) {
@@ -245,6 +245,7 @@ public final class MojoHelper {
             groupId = artifact.getGroupId();
             artifactId = artifact.getArtifactId();
             classifier = artifact.getClassifier();
+            extension = artifact.getExtension();
             version = artifact.getVersion();
             scope = node.getDependency().getScope();
             optional = node.getDependency().isOptional();
@@ -252,18 +253,20 @@ public final class MojoHelper {
             groupId = node.getArtifact().getGroupId();
             artifactId = node.getArtifact().getArtifactId();
             classifier = node.getArtifact().getClassifier();
+            extension = node.getArtifact().getExtension();
             version = node.getArtifact().getVersion();
             scope = "";
         } else {
             groupId = "?";
             artifactId = "?";
             classifier = "";
+            extension = "";
             version = "?";
             scope = "";
         }
 
-        DependencyTreeModel.TreeNode treeNode =
-                new DependencyTreeModel.TreeNode(groupId, artifactId, classifier, version, scope, optional, depth);
+        DependencyTreeModel.TreeNode treeNode = new DependencyTreeModel.TreeNode(
+                groupId, artifactId, classifier, extension, version, scope, optional, depth);
 
         // Detect dependency-management overrides: the ClassicDependencyManager records the
         // pre-management version via DependencyManagerUtils when it overrides a version.

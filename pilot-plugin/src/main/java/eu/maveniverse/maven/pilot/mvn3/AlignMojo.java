@@ -28,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.Locale;
 import org.apache.maven.execution.MavenSession;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -192,7 +193,7 @@ public class AlignMojo extends AbstractMojo {
 
         if (versionStyle != null) {
             try {
-                style = AlignOptions.VersionStyle.valueOf(versionStyle.toUpperCase());
+                style = AlignOptions.VersionStyle.valueOf(versionStyle.toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException e) {
                 throw new MojoExecutionException(
                         "Invalid pilot.versionStyle '" + versionStyle + "'. Valid values: INLINE, MANAGED.");
@@ -200,7 +201,7 @@ public class AlignMojo extends AbstractMojo {
         }
         if (versionSource != null) {
             try {
-                source = AlignOptions.VersionSource.valueOf(versionSource.toUpperCase());
+                source = AlignOptions.VersionSource.valueOf(versionSource.toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException e) {
                 throw new MojoExecutionException(
                         "Invalid pilot.versionSource '" + versionSource + "'. Valid values: LITERAL, PROPERTY.");
@@ -208,7 +209,7 @@ public class AlignMojo extends AbstractMojo {
         }
         if (namingConvention != null) {
             try {
-                naming = AlignOptions.PropertyNamingConvention.valueOf(namingConvention.toUpperCase());
+                naming = AlignOptions.PropertyNamingConvention.valueOf(namingConvention.toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException e) {
                 throw new MojoExecutionException(
                         "Invalid pilot.namingConvention '" + namingConvention + "'. Valid values: DOTTED, FLAT.");
@@ -226,8 +227,8 @@ public class AlignMojo extends AbstractMojo {
      * Produces a simple before/after diff for logging.
      */
     private String buildDiff(String before, String after) {
-        String[] beforeLines = before.split("\n", -1);
-        String[] afterLines = after.split("\n", -1);
+        String[] beforeLines = before.split("\\r?\\n", -1);
+        String[] afterLines = after.split("\\r?\\n", -1);
         StringBuilder sb = new StringBuilder();
         int max = Math.max(beforeLines.length, afterLines.length);
         for (int i = 0; i < max; i++) {
@@ -245,7 +246,7 @@ public class AlignMojo extends AbstractMojo {
      * Writes {@code content} to {@code target} atomically (temp file + rename).
      */
     private void writePom(Path target, String content) throws IOException {
-        Path tmp = target.resolveSibling(target.getFileName() + ".pilot-align.tmp");
+        Path tmp = Files.createTempFile(target.getParent(), target.getFileName() + ".pilot-align-", ".tmp");
         try {
             Files.writeString(tmp, content);
             try {

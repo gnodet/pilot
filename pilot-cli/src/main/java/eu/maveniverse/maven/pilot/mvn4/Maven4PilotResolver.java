@@ -230,6 +230,8 @@ class Maven4PilotResolver implements PilotResolver {
                             model.getVersion(),
                             model.getPackaging() != null ? model.getPackaging() : "jar"))
                     .dependencies(toDependencyCoordinates(managed))
+                    .managedDependencies(toDependencyCoordinates(
+                            model.getDependencyManagement().getDependencies()))
                     .pathScope(PathScope.TEST_RUNTIME)
                     .build();
             DependencyResolverResult result = resolver.resolve(request);

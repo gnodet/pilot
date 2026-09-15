@@ -20,8 +20,11 @@ package eu.maveniverse.maven.pilot;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.tamboui.tui.event.KeyCode;
 import dev.tamboui.tui.event.KeyEvent;
+import dev.tamboui.tui.event.MouseEvent;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -118,6 +121,84 @@ class UpdatesTuiImpactTest {
         UpdatesTui.ImpactTarget target = tui.resolveImpactTarget(row);
         assertThat(target).isNull();
         assertThat(tui.status()).isEqualTo("No update available for tree impact");
+    }
+
+    // --- resolveImpactTarget: group-header paths ---
+
+    @Test
+    void resolveImpactTargetForGroupHeaderWithNoUpdate() throws IOException {
+        var group = new ReactorCollector.PropertyGroup("spring.version", "${spring.version}", "6.1.0", null);
+        // newestVersion intentionally left null — group has no update
+        var row = UpdatesTui.ReactorRow.group(group);
+
+        Path dir = subdir("group-no-update");
+        PilotProject project = createProject("com.example", "app", "1.0", dir);
+        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
+        UpdatesTui tui = createTui(result, List.of(project));
+
+        UpdatesTui.ImpactTarget target = tui.resolveImpactTarget(row);
+        assertThat(target).isNull();
+        assertThat(tui.status()).isEqualTo("No update available for tree impact");
+    }
+
+    @Test
+    void resolveImpactTargetForGroupHeaderWithUpdateButNoDepsResolved() throws IOException {
+        var group = new ReactorCollector.PropertyGroup("spring.version", "${spring.version}", "6.1.0", null);
+        group.newestVersion = "6.2.0";
+        // No dependency in the group has newestVersion set
+        var dep = new ReactorCollector.AggregatedDependency("org.springframework", "spring-core");
+        dep.primaryVersion = "6.1.0";
+        // dep.newestVersion intentionally left null
+        group.dependencies.add(dep);
+        var row = UpdatesTui.ReactorRow.group(group);
+
+        Path dir = subdir("group-no-resolved-dep");
+        PilotProject project = createProject("com.example", "app", "1.0", dir);
+        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
+        UpdatesTui tui = createTui(result, List.of(project));
+
+        UpdatesTui.ImpactTarget target = tui.resolveImpactTarget(row);
+        assertThat(target).isNull();
+        assertThat(tui.status()).isEqualTo("No dependency in group has a resolved update");
+    }
+
+    @Test
+    void resolveImpactTargetForGroupHeaderWithResolvedDep() throws IOException {
+        var group = new ReactorCollector.PropertyGroup("spring.version", "${spring.version}", "6.1.0", null);
+        group.newestVersion = "6.2.0";
+        var dep = new ReactorCollector.AggregatedDependency("org.springframework", "spring-core");
+        dep.primaryVersion = "6.1.0";
+        dep.newestVersion = "6.2.0";
+        group.dependencies.add(dep);
+        var row = UpdatesTui.ReactorRow.group(group);
+
+        Path dir = subdir("group-resolved");
+        PilotProject project = createProject("com.example", "app", "1.0", dir);
+        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
+        UpdatesTui tui = createTui(result, List.of(project));
+
+        UpdatesTui.ImpactTarget target = tui.resolveImpactTarget(row);
+        assertThat(target).isNotNull();
+        assertThat(target.dep()).isSameAs(dep);
+        assertThat(target.label()).contains("spring.version").contains("6.1.0").contains("6.2.0");
+    }
+
+    @Test
+    void resolveImpactTargetForDepRowWithUpdate() throws IOException {
+        var dep = new ReactorCollector.AggregatedDependency("com.example", "lib");
+        dep.primaryVersion = "1.0";
+        dep.newestVersion = "2.0";
+        var row = UpdatesTui.ReactorRow.dep(dep);
+
+        Path dir = subdir("dep-with-update");
+        PilotProject project = createProject("com.example", "app", "1.0", dir);
+        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
+        UpdatesTui tui = createTui(result, List.of(project));
+
+        UpdatesTui.ImpactTarget target = tui.resolveImpactTarget(row);
+        assertThat(target).isNotNull();
+        assertThat(target.dep()).isSameAs(dep);
+        assertThat(target.label()).contains("com.example:lib").contains("1.0").contains("2.0");
     }
 
     // --- ReactorRow.group(): group header with update ---
@@ -221,6 +302,125 @@ class UpdatesTuiImpactTest {
         ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
         UpdatesTui tui = createTui(result, List.of(project));
         // treeImpactGeneration is private; just verify the tui builds without errors
+        assertThat(tui.status()).isNotNull();
+    }
+
+    // --- treeImpactOverlay active paths (via reflection) ---
+
+    /**
+     * Opens the treeImpactOverlay on the given tui via reflection (it's a private field).
+     */
+    private static void openTreeImpactOverlay(UpdatesTui tui) throws Exception {
+        Field f = UpdatesTui.class.getDeclaredField("treeImpactOverlay");
+        f.setAccessible(true);
+        DiffOverlay overlay = (DiffOverlay) f.get(tui);
+        // Create a minimal non-empty entry list so isActive() returns true
+        var entries = List.of(new TreeDiff.DiffEntry("com.example:lib", "1.0", 0, TreeDiff.Side.LEFT));
+        overlay.openTreeImpact(entries);
+    }
+
+    @Test
+    void handleKeyEventEscWhenTreeImpactOverlayActive() throws Exception {
+        Path dir = subdir("overlay-esc");
+        PilotProject project = createProject("com.example", "app", "1.0", dir);
+        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
+        UpdatesTui tui = createTui(result, List.of(project));
+        openTreeImpactOverlay(tui);
+
+        // ESC should close the overlay and return true
+        boolean handled = tui.handleKeyEvent(KeyEvent.ofKey(KeyCode.ESCAPE));
+        assertThat(handled).isTrue();
+    }
+
+    @Test
+    void handleKeyEventQWhenTreeImpactOverlayActive() throws Exception {
+        Path dir = subdir("overlay-q");
+        PilotProject project = createProject("com.example", "app", "1.0", dir);
+        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
+        UpdatesTui tui = createTui(result, List.of(project));
+        openTreeImpactOverlay(tui);
+
+        boolean handled = tui.handleKeyEvent(KeyEvent.ofChar('q'));
+        assertThat(handled).isTrue();
+    }
+
+    @Test
+    void handleKeyEventScrollWhenTreeImpactOverlayActive() throws Exception {
+        Path dir = subdir("overlay-scroll");
+        PilotProject project = createProject("com.example", "app", "1.0", dir);
+        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
+        UpdatesTui tui = createTui(result, List.of(project));
+        openTreeImpactOverlay(tui);
+
+        // Any other key (e.g. down arrow) goes to scroll handling, overlay stays active → true
+        boolean handled = tui.handleKeyEvent(KeyEvent.ofKey(KeyCode.DOWN));
+        assertThat(handled).isTrue();
+    }
+
+    @Test
+    void renderStandaloneWithTreeImpactOverlayActive() throws Exception {
+        Path dir = subdir("overlay-render");
+        PilotProject project = createProject("com.example", "app", "1.0", dir);
+        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
+        UpdatesTui tui = createTui(result, List.of(project));
+        tui.loading = false;
+        tui.buildDisplayRows();
+        openTreeImpactOverlay(tui);
+
+        // Should render without throwing; the overlay content should appear
+        String output = TuiTestHelper.render(tui::renderStandalone);
+        assertThat(output).contains("com.example:lib:1.0");
+    }
+
+    @Test
+    void handleMouseEventWhenTreeImpactOverlayActive() throws Exception {
+        Path dir = subdir("overlay-mouse");
+        PilotProject project = createProject("com.example", "app", "1.0", dir);
+        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
+        UpdatesTui tui = createTui(result, List.of(project));
+        openTreeImpactOverlay(tui);
+
+        MouseEvent scrollEvent = MouseEvent.scrollDown(10, 10);
+        boolean handled = tui.handleMouseEvent(scrollEvent, null);
+        assertThat(handled).isTrue();
+    }
+
+    @Test
+    void keyHintsContainsEscWhenTreeImpactOverlayActive() throws Exception {
+        Path dir = subdir("overlay-hints");
+        PilotProject project = createProject("com.example", "app", "1.0", dir);
+        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
+        UpdatesTui tui = createTui(result, List.of(project));
+        openTreeImpactOverlay(tui);
+
+        // keyHints when overlay active should contain Esc/close hint
+        var hints = tui.keyHints();
+        String hintsText = hints.stream().map(s -> s.content()).reduce("", String::concat);
+        assertThat(hintsText).contains("Esc");
+    }
+
+    @Test
+    void constructorWithFiveArgs() throws IOException {
+        // Cover the 5-arg constructor path: this(result, model, gav, resolver, null, sessionProvider)
+        Path dir = subdir("constructor-5arg");
+        PilotProject project = createProject("com.example", "app", "1.0", dir);
+        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
+        ReactorModel model = ReactorModel.build(List.of(project));
+
+        UpdatesTui tui = new UpdatesTui(result, model, "com.example:app:1.0", (g, a) -> List.of(), null);
+        assertThat(tui.status()).isNotNull();
+    }
+
+    @Test
+    void constructorWithSixArgsAndImpactResolver() throws IOException {
+        // Cover the 6-arg constructor with non-null treeImpactResolver
+        Path dir = subdir("constructor-6arg");
+        PilotProject project = createProject("com.example", "app", "1.0", dir);
+        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
+        ReactorModel model = ReactorModel.build(List.of(project));
+
+        UpdatesTui.TreeImpactResolver resolver = (g, a, ov, nv) -> List.of();
+        UpdatesTui tui = new UpdatesTui(result, model, "com.example:app:1.0", (g, a) -> List.of(), resolver, null);
         assertThat(tui.status()).isNotNull();
     }
 }

@@ -28,9 +28,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 import javax.inject.Inject;
-import org.apache.maven.execution.MavenSession;
 import org.apache.maven.model.Dependency;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -45,15 +43,17 @@ import org.eclipse.aether.resolution.DependencyRequest;
 import org.eclipse.aether.resolution.DependencyResult;
 
 /**
- * Dependency analysis: interactive TUI and CI-friendly report/check/fix modes.
+ * Dependency analysis: CI-friendly report/check/fix modes.
  *
- * <p>Four actions via {@code -Dpilot.action}:</p>
+ * <p>Three actions via {@code -Dpilot.action}:</p>
  * <ul>
- *   <li><b>tui</b> (default) — interactive TUI showing declared vs transitive dependencies</li>
- *   <li><b>report</b> — prints unused declared and used transitive dependencies without failing</li>
- *   <li><b>check</b> — reports issues and fails the build</li>
- *   <li><b>fix</b> — removes unused declared and adds used transitive dependencies</li>
+ *   <li><b>report</b> (default) — prints unused declared and used transitive dependencies without failing</li>
+ *   <li><b>check</b> — reports issues and fails the build if any are found</li>
+ *   <li><b>fix</b> — removes unused declared and adds used transitive dependencies to the POM</li>
  * </ul>
+ *
+ * <p>Runs once per module in a multi-module reactor. For an interactive TUI,
+ * use {@code pilot:pilot} instead.</p>
  *
  * <p>When the project has been compiled ({@code target/classes} exists), performs bytecode-level
  * analysis to determine which dependencies are actually referenced in code.</p>
@@ -61,27 +61,23 @@ import org.eclipse.aether.resolution.DependencyResult;
  * <p>Usage:</p>
  * <pre>
  * mvn compile pilot:dependencies
- * mvn compile pilot:dependencies -Dpilot.action=report
  * mvn compile pilot:dependencies -Dpilot.action=check
  * mvn compile pilot:dependencies -Dpilot.action=fix
  * </pre>
  *
  * @since 0.1.0
  */
-@Mojo(name = "dependencies", requiresProject = true, aggregator = true, threadSafe = true)
+@Mojo(name = "dependencies", requiresProject = true, threadSafe = true)
 public class DependenciesMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
     private MavenProject project;
 
-    @Parameter(defaultValue = "${session}", readonly = true, required = true)
-    private MavenSession session;
-
     @Parameter(defaultValue = "${repositorySystemSession}", readonly = true, required = true)
     private RepositorySystemSession repoSession;
 
-    @Parameter(property = "pilot.action", defaultValue = "tui")
-    String action = "tui";
+    @Parameter(property = "pilot.action", defaultValue = "report")
+    String action = "report";
 
     @Parameter
     private List<String> runtimeArtifacts;
@@ -107,11 +103,9 @@ public class DependenciesMojo extends AbstractMojo {
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
-        if (!"tui".equals(action) && !"report".equals(action) && !"check".equals(action) && !"fix".equals(action)) {
-            throw new MojoExecutionException(
-                    "Invalid action '" + action + "'. Use 'tui', 'report', 'check', or 'fix'.");
+        if (!"report".equals(action) && !"check".equals(action) && !"fix".equals(action)) {
+            throw new MojoExecutionException("Invalid action '" + action + "'. Use 'report', 'check', or 'fix'.");
         }
-        resolveAction();
         try {
             executeForProject(project);
         } catch (MojoFailureException e) {
@@ -122,6 +116,10 @@ public class DependenciesMojo extends AbstractMojo {
     }
 
     private void executeForProject(MavenProject proj) throws Exception {
+        if ("pom".equals(proj.getPackaging())) {
+            getLog().debug("Skipping " + proj.getArtifactId() + " (pom packaging, no classes to analyse).");
+            return;
+        }
         Set<String> declaredGAs = new HashSet<>();
         List<DependenciesTui.DepEntry> declared = new ArrayList<>();
         for (Dependency dep : proj.getDependencies()) {
@@ -161,11 +159,9 @@ public class DependenciesMojo extends AbstractMojo {
 
         Path classesDir = Path.of(proj.getBuild().getOutputDirectory());
         Path testClassesDir = Path.of(proj.getBuild().getTestOutputDirectory());
-        boolean bytecodeAnalyzed = false;
 
         DependencyUsageAnalyzer.AnalysisResult usage = null;
         if (Files.isDirectory(classesDir)) {
-            bytecodeAnalyzed = true;
 
             ClassFileScanner.ScanResult mainScan = ClassFileScanner.scanDirectory(classesDir);
             ClassFileScanner.ScanResult testScan = Files.isDirectory(testClassesDir)
@@ -181,27 +177,13 @@ public class DependenciesMojo extends AbstractMojo {
                             gaToJar,
                             declared,
                             transitive);
-
-            if ("tui".equals(action)) {
-                enrichForTui(declared, transitive, classIndex, gaToJar, mainScan, testScan, usage);
-            } else {
-                applyUsageStatus(declared, transitive, usage);
-            }
-        } else if (!"tui".equals(action)) {
+            applyUsageStatus(declared, transitive, usage);
+        } else {
             throw new MojoExecutionException(
                     "target/classes not found — run 'mvn compile' before dependencies report/check/fix.");
-        } else {
-            getLog().warn("target/classes not found — skipping bytecode analysis. Run 'mvn compile' first.");
         }
 
-        if ("tui".equals(action)) {
-            String pomPath = proj.getFile().getAbsolutePath();
-            String gav = proj.getGroupId() + ":" + proj.getArtifactId() + ":" + proj.getVersion();
-            DependenciesTui tui = new DependenciesTui(declared, transitive, pomPath, gav, bytecodeAnalyzed);
-            tui.runStandalone();
-        } else {
-            executeNonInteractive(proj, declared, transitive, gaToVersion);
-        }
+        executeNonInteractive(proj, declared, transitive, gaToVersion);
     }
 
     void executeNonInteractive(
@@ -258,39 +240,6 @@ public class DependenciesMojo extends AbstractMojo {
         }
     }
 
-    private void enrichForTui(
-            List<DependenciesTui.DepEntry> declared,
-            List<DependenciesTui.DepEntry> transitive,
-            Map<String, String> classIndex,
-            Map<String, File> gaToJar,
-            ClassFileScanner.ScanResult mainScan,
-            ClassFileScanner.ScanResult testScan,
-            DependencyUsageAnalyzer.AnalysisResult usage) {
-        Map<String, Set<String>> gaToClasses = new HashMap<>();
-        for (var entry : classIndex.entrySet()) {
-            gaToClasses.computeIfAbsent(entry.getValue(), k -> new HashSet<>()).add(entry.getKey());
-        }
-
-        Map<String, Set<String>> allMembers = new HashMap<>(mainScan.memberReferences());
-        for (var entry : testScan.memberReferences().entrySet()) {
-            allMembers.computeIfAbsent(entry.getKey(), k -> new HashSet<>()).addAll(entry.getValue());
-        }
-
-        Set<String> allClassRefs = new HashSet<>(mainScan.referencedClasses());
-        allClassRefs.addAll(testScan.referencedClasses());
-
-        for (var dep : declared) {
-            dep.usageStatus =
-                    usage.declaredUsage().getOrDefault(dep.ga(), DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
-            enrichUsageDetail(dep, gaToClasses, gaToJar, mainScan.referencedClasses(), allClassRefs, allMembers);
-        }
-        for (var dep : transitive) {
-            dep.usageStatus =
-                    usage.transitiveUsage().getOrDefault(dep.ga(), DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
-            enrichUsageDetail(dep, gaToClasses, gaToJar, mainScan.referencedClasses(), allClassRefs, allMembers);
-        }
-    }
-
     DependencyUsageAnalyzer buildAnalyzer() {
         DependencyUsageAnalyzer.Builder builder = DependencyUsageAnalyzer.builder();
         if (runtimeArtifacts != null && !runtimeArtifacts.isEmpty()) {
@@ -311,64 +260,5 @@ public class DependenciesMojo extends AbstractMojo {
 
     static Set<String> buildIgnoreSet(List<String> patterns) {
         return patterns != null && !patterns.isEmpty() ? new HashSet<>(patterns) : Set.of();
-    }
-
-    /**
-     * Resolves the effective action: if the action is the default {@code tui} but the
-     * environment is headless (no interactive Maven session or no TTY), silently falls back
-     * to {@code report} and logs an informational message.
-     */
-    void resolveAction() {
-        if ("tui".equals(action) && isHeadless()) {
-            getLog().info("Non-interactive environment detected; falling back to action=report"
-                    + " (use -Dpilot.action=report to suppress this message).");
-            action = "report";
-        }
-    }
-
-    /**
-     * Returns {@code true} when running in a non-interactive (headless) environment:
-     * either Maven was started with {@code --batch-mode} / {@code -B}, or no TTY is attached
-     * ({@code System.console() == null}).
-     */
-    boolean isHeadless() {
-        return !session.getRequest().isInteractiveMode() || System.console() == null;
-    }
-
-    private static final Set<String> TEST_SCOPES = Set.of("test", "test-only", "test-runtime");
-
-    private static void enrichUsageDetail(
-            DependenciesTui.DepEntry dep,
-            Map<String, Set<String>> gaToClasses,
-            Map<String, File> gaToJar,
-            Set<String> mainClassRefs,
-            Set<String> allClassRefs,
-            Map<String, Set<String>> allMemberRefs) {
-        Set<String> depClasses = gaToClasses.get(dep.ga());
-        if (depClasses == null) {
-            dep.totalClasses = 0;
-            dep.usedMembers = Map.of();
-        } else {
-            dep.totalClasses = depClasses.size();
-            Set<String> refs = TEST_SCOPES.contains(dep.scope) ? allClassRefs : mainClassRefs;
-            Map<String, List<String>> members = new TreeMap<>();
-            for (String className : depClasses) {
-                if (refs.contains(className)) {
-                    Set<String> memberSet = allMemberRefs.get(className);
-                    members.put(
-                            className,
-                            memberSet != null ? memberSet.stream().sorted().toList() : List.of());
-                }
-            }
-            dep.usedMembers = members;
-        }
-
-        File jarFile = gaToJar.get(dep.ga());
-        if (jarFile != null) {
-            Set<String> spi = DependencyUsageAnalyzer.getRuntimeDiscoveryClasses(jarFile);
-            dep.spiServices = spi.isEmpty() ? List.of() : spi.stream().sorted().toList();
-        } else {
-            dep.spiServices = List.of();
-        }
     }
 }

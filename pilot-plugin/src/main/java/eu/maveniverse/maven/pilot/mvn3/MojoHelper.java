@@ -37,6 +37,7 @@ import org.eclipse.aether.collection.CollectRequest;
 import org.eclipse.aether.graph.Dependency;
 import org.eclipse.aether.graph.DependencyNode;
 import org.eclipse.aether.graph.Exclusion;
+import org.eclipse.aether.util.graph.manager.DependencyManagerUtils;
 
 /**
  * Shared utilities for Mojo implementations.
@@ -260,7 +261,7 @@ public final class MojoHelper {
             Set<String> includedScopes) {
         counter[0]++;
 
-        String groupId, artifactId, classifier, version, scope;
+        String groupId, artifactId, classifier, extension, version, scope;
         boolean optional = false;
 
         if (node.getDependency() != null) {
@@ -268,6 +269,7 @@ public final class MojoHelper {
             groupId = artifact.getGroupId();
             artifactId = artifact.getArtifactId();
             classifier = artifact.getClassifier();
+            extension = artifact.getExtension();
             version = artifact.getVersion();
             scope = node.getDependency().getScope();
             optional = node.getDependency().isOptional();
@@ -275,21 +277,27 @@ public final class MojoHelper {
             groupId = node.getArtifact().getGroupId();
             artifactId = node.getArtifact().getArtifactId();
             classifier = node.getArtifact().getClassifier();
+            extension = node.getArtifact().getExtension();
             version = node.getArtifact().getVersion();
             scope = "";
         } else {
             groupId = "?";
             artifactId = "?";
             classifier = "";
+            extension = "";
             version = "?";
             scope = "";
         }
 
-        DependencyTreeModel.TreeNode treeNode =
-                new DependencyTreeModel.TreeNode(groupId, artifactId, classifier, version, scope, optional, depth);
+        DependencyTreeModel.TreeNode treeNode = new DependencyTreeModel.TreeNode(
+                groupId, artifactId, classifier, extension, version, scope, optional, depth);
 
-        if (node.getData().get("conflict.originalVersion") instanceof String originalVersion) {
-            treeNode.requestedVersion = originalVersion;
+        // Detect dependency-management overrides: the ClassicDependencyManager records the
+        // pre-management version via DependencyManagerUtils when it overrides a version.
+        // node.getArtifact().getVersion() is already the resolved (post-management) version.
+        String premanagedVersion = DependencyManagerUtils.getPremanagedVersion(node);
+        if (premanagedVersion != null && !premanagedVersion.equals(version)) {
+            treeNode.requestedVersion = premanagedVersion;
             conflicts.add(treeNode);
         }
 

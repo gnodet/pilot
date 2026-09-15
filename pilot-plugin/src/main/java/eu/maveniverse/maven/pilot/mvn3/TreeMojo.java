@@ -31,17 +31,21 @@ import org.eclipse.aether.RepositorySystemSession;
 import org.eclipse.aether.collection.CollectResult;
 
 /**
- * Interactive TUI for browsing the project dependency tree.
+ * Print the project dependency tree as plain text.
+ *
+ * <p>Runs once per module in a multi-module reactor. For an interactive TUI with
+ * expand/collapse, conflict highlighting, scope filtering, and reverse-path lookup,
+ * use {@code pilot:pilot} instead.</p>
  *
  * <p>Usage:</p>
  * <pre>
  * mvn pilot:tree
- * mvn pilot:tree -Dscope=compile
+ * mvn pilot:tree -Dscope=test
  * </pre>
  *
  * @since 0.1.0
  */
-@Mojo(name = "tree", requiresProject = true, aggregator = true, threadSafe = true)
+@Mojo(name = "tree", requiresProject = true, threadSafe = true)
 public class TreeMojo extends AbstractMojo {
 
     @Parameter(defaultValue = "${project}", readonly = true, required = true)
@@ -63,6 +67,8 @@ public class TreeMojo extends AbstractMojo {
     public void execute() throws MojoExecutionException, MojoFailureException {
         try {
             executeForProject(project);
+        } catch (MojoExecutionException | MojoFailureException e) {
+            throw e;
         } catch (Exception e) {
             throw new MojoExecutionException("Failed to display dependency tree: " + e.getMessage(), e);
         }
@@ -72,7 +78,48 @@ public class TreeMojo extends AbstractMojo {
         CollectResult result = repoSystem.collectDependencies(repoSession, MojoHelper.buildCollectRequest(proj));
         String gav = proj.getGroupId() + ":" + proj.getArtifactId() + ":" + proj.getVersion();
         DependencyTreeModel treeModel = MojoHelper.fromDependencyNode(result.getRoot());
-        TreeTui tui = new TreeTui(treeModel, scope, gav);
-        tui.runStandalone();
+        DependencyTreeModel filtered = treeModel.filterByScope(scope);
+        StringBuilder sb = new StringBuilder();
+        sb.append(gav).append("\n");
+        renderTextTree(filtered.root, sb, "");
+        getLog().info(sb.toString());
+    }
+
+    /**
+     * Renders a dependency node and its children as a plain-text tree using box-drawing characters,
+     * matching the style of {@code dependency:tree}.
+     */
+    private void renderTextTree(DependencyTreeModel.TreeNode node, StringBuilder sb, String prefix) {
+        for (int i = 0; i < node.children.size(); i++) {
+            DependencyTreeModel.TreeNode child = node.children.get(i);
+            boolean last = (i == node.children.size() - 1);
+            String connector = last ? "\\- " : "+- ";
+            sb.append(prefix).append(connector).append(formatNode(child)).append("\n");
+            String childPrefix = prefix + (last ? "   " : "|  ");
+            renderTextTree(child, sb, childPrefix);
+        }
+    }
+
+    String formatNode(DependencyTreeModel.TreeNode node) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(node.groupId)
+                .append(":")
+                .append(node.artifactId)
+                .append(":")
+                .append(node.extension != null && !node.extension.isEmpty() ? node.extension : "jar");
+        if (node.classifier != null && !node.classifier.isEmpty()) {
+            sb.append(":").append(node.classifier);
+        }
+        sb.append(":").append(node.version);
+        if (node.scope != null && !node.scope.isEmpty() && !"compile".equals(node.scope)) {
+            sb.append(":").append(node.scope);
+        }
+        if (node.optional) {
+            sb.append(" (optional)");
+        }
+        if (node.isConflict()) {
+            sb.append(" (conflict: requested ").append(node.requestedVersion).append(")");
+        }
+        return sb.toString();
     }
 }

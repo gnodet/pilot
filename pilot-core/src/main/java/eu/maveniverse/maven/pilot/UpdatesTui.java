@@ -1011,6 +1011,38 @@ public class UpdatesTui extends ToolPanel {
         status = changes == 0 ? "No changes to show" : changes + " line(s) changed across " + diffs.size() + " file(s)";
     }
 
+    private record ImpactTarget(ReactorCollector.AggregatedDependency dep, String label) {}
+
+    /**
+     * Resolve the selected row to a single dep and label for tree-impact computation.
+     * Returns {@code null} and sets {@link #status} if no update is available.
+     */
+    private ImpactTarget resolveImpactTarget(ReactorRow row) {
+        if (row.isGroupHeader()) {
+            ReactorCollector.PropertyGroup pg = row.propertyGroup;
+            if (!pg.hasUpdate()) {
+                status = "No update available for tree impact";
+                return null;
+            }
+            ReactorCollector.AggregatedDependency dep = pg.dependencies.stream()
+                    .filter(d -> d.newestVersion != null)
+                    .findFirst()
+                    .orElse(null);
+            if (dep == null) {
+                status = "No dependency in group has a resolved update";
+                return null;
+            }
+            return new ImpactTarget(dep, "${" + pg.propertyName + "} " + pg.resolvedVersion + " → " + pg.newestVersion);
+        }
+        if (row.dependency == null || row.dependency.newestVersion == null) {
+            status = "No update available for tree impact";
+            return null;
+        }
+        return new ImpactTarget(
+                row.dependency,
+                row.dependency.ga() + " " + row.dependency.primaryVersion + " → " + row.dependency.newestVersion);
+    }
+
     private void showTreeImpact() {
         if (treeImpactResolver == null) {
             status = "Tree impact not available";
@@ -1018,54 +1050,28 @@ public class UpdatesTui extends ToolPanel {
         }
         Integer sel = tableState.selected();
         if (sel == null || sel >= displayRows.size()) return;
-        ReactorRow row = displayRows.get(sel);
+        ImpactTarget target = resolveImpactTarget(displayRows.get(sel));
+        if (target == null) return;
 
-        // For group headers, pick the first dependency that has an update
-        ReactorCollector.AggregatedDependency dep;
-        String label;
-        if (row.isGroupHeader()) {
-            ReactorCollector.PropertyGroup pg = row.propertyGroup;
-            if (!pg.hasUpdate()) {
-                status = "No update available for tree impact";
-                return;
-            }
-            dep = pg.dependencies.stream()
-                    .filter(d -> d.newestVersion != null)
-                    .findFirst()
-                    .orElse(null);
-            if (dep == null) {
-                status = "No dependency in group has a resolved update";
-                return;
-            }
-            label = "${" + pg.propertyName + "} " + pg.resolvedVersion + " → " + pg.newestVersion;
-        } else {
-            if (row.dependency == null || row.dependency.newestVersion == null) {
-                status = "No update available for tree impact";
-                return;
-            }
-            dep = row.dependency;
-            label = dep.ga() + " " + dep.primaryVersion + " → " + dep.newestVersion;
-        }
-
-        final var finalDep = dep;
-        final var finalLabel = label;
-        status = "Computing tree impact for " + finalLabel + "…";
+        status = "Computing tree impact for " + target.label() + "…";
         CompletableFuture.supplyAsync(
                         () -> treeImpactResolver.computeImpact(
-                                finalDep.groupId, finalDep.artifactId, finalDep.primaryVersion, finalDep.newestVersion),
+                                target.dep().groupId,
+                                target.dep().artifactId,
+                                target.dep().primaryVersion,
+                                target.dep().newestVersion),
                         httpPool)
                 .thenAccept(entries -> runner.runOnRenderThread(() -> {
                     if (entries.isEmpty() || entries.stream().allMatch(e -> e.side() == TreeDiff.Side.SAME)) {
-                        status = "No transitive changes for " + finalLabel;
+                        status = "No transitive changes for " + target.label();
                     } else {
                         treeImpactOverlay.openTreeImpact(entries);
-                        status = "Tree impact: " + finalLabel;
+                        status = "Tree impact: " + target.label();
                     }
                 }))
                 .exceptionally(ex -> {
-                    runner.runOnRenderThread(() -> {
-                        status = "Tree impact failed for " + finalLabel + ": " + ex.getMessage();
-                    });
+                    runner.runOnRenderThread(
+                            () -> status = "Tree impact failed for " + target.label() + ": " + ex.getMessage());
                     return null;
                 });
     }

@@ -97,7 +97,7 @@ class DiffOverlayTest {
         files.put("same.txt", Map.entry("content\n", "content\n"));
 
         long changes = overlay.openMulti(files);
-        assertThat(changes).isEqualTo(0);
+        assertThat(changes).isZero();
         assertThat(overlay.isActive()).isFalse();
     }
 
@@ -158,9 +158,9 @@ class DiffOverlayTest {
     void scrollUpDoesNotGoBelowZero() {
         DiffOverlay overlay = new DiffOverlay();
         overlay.open("a\nb\nc\nd\ne\nf\n", "x\ny\nz\nd\ne\nf\n");
-        assertThat(overlay.scroll()).isEqualTo(0);
+        assertThat(overlay.scroll()).isZero();
         overlay.scrollUp();
-        assertThat(overlay.scroll()).isEqualTo(0);
+        assertThat(overlay.scroll()).isZero();
     }
 
     @Test

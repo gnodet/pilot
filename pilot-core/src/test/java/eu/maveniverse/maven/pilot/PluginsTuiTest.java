@@ -83,7 +83,7 @@ class PluginsTuiTest {
         assertThat(tui.toolName()).isEqualTo("Plugins");
         assertThat(tui.status()).contains("Loading");
         assertThat(tui.subViewCount()).isEqualTo(3);
-        assertThat(tui.activeSubView()).isEqualTo(0);
+        assertThat(tui.activeSubView()).isZero();
     }
 
     @Test
@@ -139,7 +139,7 @@ class PluginsTuiTest {
                 List.of());
         PluginsTui tui = createTui(project, List.of(project));
 
-        assertThat(tui.activeSubView()).isEqualTo(0);
+        assertThat(tui.activeSubView()).isZero();
 
         tui.setActiveSubView(1);
         assertThat(tui.activeSubView()).isEqualTo(1);
@@ -148,7 +148,7 @@ class PluginsTuiTest {
         assertThat(tui.activeSubView()).isEqualTo(2);
 
         tui.setActiveSubView(0);
-        assertThat(tui.activeSubView()).isEqualTo(0);
+        assertThat(tui.activeSubView()).isZero();
     }
 
     @Test

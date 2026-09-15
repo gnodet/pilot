@@ -762,7 +762,7 @@ public class DependenciesTui extends ToolPanel {
 
                 ## Dependencies Actions
                 ↑ / ↓           Move selection up / down
-                1-""" + views.length + """
+                """ + "1-" + views.length + """
              Switch Declared / Transitive / Managed view
                 x / Enter       Remove selected (Declared view)
                 a / Enter       Add to POM (Transitive view)
@@ -1184,8 +1184,7 @@ public class DependenciesTui extends ToolPanel {
         List<HelpOverlay.Section> sections = new ArrayList<>(helpSections());
         sections.addAll(HelpOverlay.parse("""
                 ## General
-                """ + NAV_KEYS + """
-                1-""" + views.length + """
+                """ + NAV_KEYS + "                1-" + views.length + """
              Switch between Declared, Transitive, and Managed views
                 d               Preview POM changes as a unified diff
                 h               Toggle this help screen

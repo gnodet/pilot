@@ -88,6 +88,7 @@ class PluginsTuiAsyncTest {
     }
 
     /** Poll until loading finishes or 5-second timeout. */
+    @SuppressWarnings("java:S2925") // Thread.sleep is intentional in this test helper
     private void waitForLoading(PluginsTui tui) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 5000;
         while (tui.loading && System.currentTimeMillis() < deadline) {
@@ -641,5 +642,7 @@ class PluginsTuiAsyncTest {
 
         PluginsTui tui = new PluginsTui(project, List.of(project), noUpdateResolver());
         tui.close(); // should not throw even before any runner is set
+        // httpPool is shut down — further submits will be rejected
+        assertThat(tui.httpPool.isShutdown()).isTrue();
     }
 }

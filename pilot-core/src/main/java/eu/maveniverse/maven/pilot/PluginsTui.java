@@ -528,9 +528,9 @@ public class PluginsTui extends ToolPanel {
             return false;
         }
         // digit keys switch views in standalone
-        char ch = key.character();
-        if (ch >= '1' && ch <= '9') {
-            int idx = ch - '1';
+        String ks = key.string();
+        if (ks.length() == 1 && ks.charAt(0) >= '1' && ks.charAt(0) <= '9') {
+            int idx = ks.charAt(0) - '1';
             if (idx < View.values().length) {
                 setActiveSubView(idx);
                 return true;
@@ -757,6 +757,7 @@ public class PluginsTui extends ToolPanel {
 
         List<String> headers = new ArrayList<>();
         headers.add("");
+        headers.add("");
         headers.add("groupId:artifactId");
         headers.add("current");
         headers.add("latest");
@@ -785,22 +786,24 @@ public class PluginsTui extends ToolPanel {
 
     private Row createUpdateRow(PluginEntry entry, boolean highlight) {
         String icon = updateTypeLabel(entry.updateType);
+        String type = entry.managed ? "[M]" : "[D]";
         String current = entry.version;
         String latest = entry.newestVersion != null ? entry.newestVersion : "";
         String age = formatAge(entry);
         Style style = updateTypeStyle(entry.updateType);
         if (highlight) style = style.bg(theme.searchHighlightBg());
         if (!singleModule) {
-            return Row.from(icon, entry.ga(), current, latest, age, String.valueOf(entry.modules.size()) + " mod")
+            return Row.from(icon, type, entry.ga(), current, latest, age, String.valueOf(entry.modules.size()) + " mod")
                     .style(style);
         }
-        return Row.from(icon, entry.ga(), current, latest, age).style(style);
+        return Row.from(icon, type, entry.ga(), current, latest, age).style(style);
     }
 
     private List<Constraint> updatesTableWidths() {
         if (!singleModule) {
             return List.of(
                     Constraint.length(6),
+                    Constraint.length(3),
                     Constraint.percentage(30),
                     Constraint.percentage(15),
                     Constraint.percentage(15),
@@ -809,6 +812,7 @@ public class PluginsTui extends ToolPanel {
         }
         return List.of(
                 Constraint.length(6),
+                Constraint.length(3),
                 Constraint.percentage(40),
                 Constraint.percentage(20),
                 Constraint.percentage(20),
@@ -816,7 +820,7 @@ public class PluginsTui extends ToolPanel {
     }
 
     private int updatesColumnCount() {
-        return singleModule ? 5 : 6;
+        return singleModule ? 6 : 7;
     }
 
     private void renderDetailPane(Frame frame, Rect area) {

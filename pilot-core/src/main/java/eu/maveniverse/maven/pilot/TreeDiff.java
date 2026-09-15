@@ -44,9 +44,10 @@ public final class TreeDiff {
         }
     }
 
-    public record DiffEntry(String ga, String version, int depth, Side side) {
+    public record DiffEntry(String ga, String version, String scope, int depth, Side side) {
         public String gav() {
-            return ga + ":" + version;
+            String base = ga + ":" + version;
+            return (scope != null && !scope.isEmpty()) ? base + " [" + scope + "]" : base;
         }
     }
 
@@ -73,10 +74,10 @@ public final class TreeDiff {
             DependencyTreeModel.TreeNode left, DependencyTreeModel.TreeNode right, List<DiffEntry> result) {
         // Emit the root / current pair — treat scope change as a difference
         if (left.ga().equals(right.ga()) && left.version.equals(right.version) && left.scope.equals(right.scope)) {
-            result.add(new DiffEntry(left.ga(), left.version, left.depth, Side.SAME));
+            result.add(new DiffEntry(left.ga(), left.version, left.scope, left.depth, Side.SAME));
         } else {
-            result.add(new DiffEntry(left.ga(), left.version, left.depth, Side.LEFT));
-            result.add(new DiffEntry(right.ga(), right.version, right.depth, Side.RIGHT));
+            result.add(new DiffEntry(left.ga(), left.version, left.scope, left.depth, Side.LEFT));
+            result.add(new DiffEntry(right.ga(), right.version, right.scope, right.depth, Side.RIGHT));
         }
 
         // Match children by GA+classifier+extension identity
@@ -118,7 +119,7 @@ public final class TreeDiff {
     }
 
     private static void drainSubtree(DependencyTreeModel.TreeNode node, Side side, List<DiffEntry> result) {
-        result.add(new DiffEntry(node.ga(), node.version, node.depth, side));
+        result.add(new DiffEntry(node.ga(), node.version, node.scope, node.depth, side));
         for (DependencyTreeModel.TreeNode child : node.children) {
             drainSubtree(child, side, result);
         }

@@ -20,6 +20,7 @@ package eu.maveniverse.maven.pilot;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.tamboui.text.Span;
 import dev.tamboui.tui.event.KeyCode;
 import dev.tamboui.tui.event.KeyEvent;
 import java.io.IOException;
@@ -157,8 +158,8 @@ class UpdatesTuiCoverageTest {
         PilotProject project = createProject("com.example", "app", "1.0", dir);
         ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
         UpdatesTui tui = createTui(result, List.of(project));
-        List<dev.tamboui.text.Span> hints = tui.keyHints();
-        String allText = hints.stream().map(dev.tamboui.text.Span::content).reduce("", String::concat);
+        List<Span> hints = tui.keyHints();
+        String allText = hints.stream().map(Span::content).reduce("", String::concat);
         assertThat(allText)
                 .contains("Space")
                 .contains("Search")

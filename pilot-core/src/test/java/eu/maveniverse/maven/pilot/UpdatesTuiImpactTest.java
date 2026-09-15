@@ -351,7 +351,7 @@ class UpdatesTuiImpactTest {
         f.setAccessible(true);
         DiffOverlay overlay = (DiffOverlay) f.get(tui);
         // Create a minimal non-empty entry list so isActive() returns true
-        var entries = List.of(new TreeDiff.DiffEntry("com.example:lib", "1.0", 0, TreeDiff.Side.LEFT));
+        var entries = List.of(new TreeDiff.DiffEntry("com.example:lib", "1.0", "compile", 0, TreeDiff.Side.LEFT));
         overlay.openTreeImpact(entries);
     }
 

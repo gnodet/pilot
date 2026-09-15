@@ -174,6 +174,8 @@ class TreeDiffTest {
         assertThat(diff).hasSize(3);
         assertThat(diff.get(0).side()).isEqualTo(TreeDiff.Side.SAME); // root
         assertThat(diff.get(1).side()).isEqualTo(TreeDiff.Side.LEFT); // g:b compile
+        assertThat(diff.get(1).gav()).contains("[compile]");
         assertThat(diff.get(2).side()).isEqualTo(TreeDiff.Side.RIGHT); // g:b runtime
+        assertThat(diff.get(2).gav()).contains("[runtime]");
     }
 }

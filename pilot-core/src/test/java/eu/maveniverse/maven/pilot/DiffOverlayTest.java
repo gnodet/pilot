@@ -119,9 +119,9 @@ class DiffOverlayTest {
     void openTreeImpactActivatesOverlay() {
         DiffOverlay overlay = new DiffOverlay();
         List<TreeDiff.DiffEntry> entries = List.of(
-                new TreeDiff.DiffEntry("g:a", "1.0", 0, TreeDiff.Side.SAME),
-                new TreeDiff.DiffEntry("g:b", "1.0", 1, TreeDiff.Side.LEFT),
-                new TreeDiff.DiffEntry("g:b", "2.0", 1, TreeDiff.Side.RIGHT));
+                new TreeDiff.DiffEntry("g:a", "1.0", "compile", 0, TreeDiff.Side.SAME),
+                new TreeDiff.DiffEntry("g:b", "1.0", "compile", 1, TreeDiff.Side.LEFT),
+                new TreeDiff.DiffEntry("g:b", "2.0", "compile", 1, TreeDiff.Side.RIGHT));
 
         overlay.openTreeImpact(entries);
         assertThat(overlay.isActive()).isTrue();
@@ -132,9 +132,9 @@ class DiffOverlayTest {
     void openTreeImpactMapsTypesCorrectly() {
         DiffOverlay overlay = new DiffOverlay();
         List<TreeDiff.DiffEntry> entries = List.of(
-                new TreeDiff.DiffEntry("g:a", "1.0", 0, TreeDiff.Side.SAME),
-                new TreeDiff.DiffEntry("g:b", "1.0", 1, TreeDiff.Side.LEFT),
-                new TreeDiff.DiffEntry("g:c", "2.0", 1, TreeDiff.Side.RIGHT));
+                new TreeDiff.DiffEntry("g:a", "1.0", "compile", 0, TreeDiff.Side.SAME),
+                new TreeDiff.DiffEntry("g:b", "1.0", "compile", 1, TreeDiff.Side.LEFT),
+                new TreeDiff.DiffEntry("g:c", "2.0", "compile", 1, TreeDiff.Side.RIGHT));
 
         overlay.openTreeImpact(entries);
         assertThat(overlay.lines().get(0).type()).isEqualTo(UnifiedDiff.Type.CONTEXT);
@@ -146,8 +146,8 @@ class DiffOverlayTest {
     void openTreeImpactIndentsByDepth() {
         DiffOverlay overlay = new DiffOverlay();
         List<TreeDiff.DiffEntry> entries = List.of(
-                new TreeDiff.DiffEntry("g:root", "1.0", 0, TreeDiff.Side.SAME),
-                new TreeDiff.DiffEntry("g:child", "1.0", 2, TreeDiff.Side.SAME));
+                new TreeDiff.DiffEntry("g:root", "1.0", "compile", 0, TreeDiff.Side.SAME),
+                new TreeDiff.DiffEntry("g:child", "1.0", "compile", 2, TreeDiff.Side.SAME));
 
         overlay.openTreeImpact(entries);
         assertThat(overlay.lines().get(0).text()).startsWith("g:root");

@@ -250,12 +250,18 @@ public class PluginsTui extends ToolPanel {
         loading = false;
         applyFilter();
         statusText = buildStatusMessage();
-        // Fetch release dates, deduplicating by GA to avoid double HTTP requests
-        // for plugins that appear in both declared and managed lists with the same GA.
+        // Build GA → all entries map so date results propagate to both declared and
+        // managed entries that share the same GA (both appear in the Updates view).
+        Map<String, List<PluginEntry>> allEntriesByGa = new LinkedHashMap<>();
+        for (PluginEntry e : plugins)
+            allEntriesByGa.computeIfAbsent(e.ga(), k -> new ArrayList<>()).add(e);
+        for (PluginEntry e : managed)
+            allEntriesByGa.computeIfAbsent(e.ga(), k -> new ArrayList<>()).add(e);
+        // Deduplicate HTTP requests: fetch dates once per GA, propagate to all entries.
         Map<String, PluginEntry> datesByGa = new LinkedHashMap<>();
         for (PluginEntry e : plugins) datesByGa.put(e.ga(), e);
         for (PluginEntry e : managed) datesByGa.putIfAbsent(e.ga(), e);
-        fetchReleaseDates(new ArrayList<>(datesByGa.values()));
+        fetchReleaseDates(new ArrayList<>(datesByGa.values()), allEntriesByGa);
     }
 
     void applyFilter() {
@@ -284,7 +290,7 @@ public class PluginsTui extends ToolPanel {
         }
     }
 
-    private void fetchReleaseDates(List<PluginEntry> entries) {
+    private void fetchReleaseDates(List<PluginEntry> entries, Map<String, List<PluginEntry>> allEntriesByGa) {
         int count = 0;
         for (PluginEntry e : entries) {
             if (e.hasUpdate()) count += 2;
@@ -295,19 +301,19 @@ public class PluginsTui extends ToolPanel {
 
         for (PluginEntry entry : entries) {
             if (entry.hasUpdate()) {
-                fetchEntryDates(entry);
+                fetchEntryDates(entry, allEntriesByGa.getOrDefault(entry.ga(), List.of(entry)));
             }
         }
     }
 
-    private void fetchEntryDates(PluginEntry entry) {
+    private void fetchEntryDates(PluginEntry entry, List<PluginEntry> allForGa) {
         fetchDate(entry.groupId, entry.artifactId, entry.version, date -> {
-            entry.currentReleaseDate = date;
-            computeLibYear(entry);
+            for (PluginEntry e : allForGa) e.currentReleaseDate = date;
+            for (PluginEntry e : allForGa) computeLibYear(e);
         });
         fetchDate(entry.groupId, entry.artifactId, entry.newestVersion, date -> {
-            entry.newestReleaseDate = date;
-            computeLibYear(entry);
+            for (PluginEntry e : allForGa) e.newestReleaseDate = date;
+            for (PluginEntry e : allForGa) computeLibYear(e);
         });
     }
 

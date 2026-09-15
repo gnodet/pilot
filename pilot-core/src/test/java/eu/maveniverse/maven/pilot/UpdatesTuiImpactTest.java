@@ -20,6 +20,7 @@ package eu.maveniverse.maven.pilot;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.tamboui.text.Span;
 import dev.tamboui.tui.event.KeyCode;
 import dev.tamboui.tui.event.KeyEvent;
 import dev.tamboui.tui.event.MouseEvent;
@@ -395,7 +396,7 @@ class UpdatesTuiImpactTest {
 
         // keyHints when overlay active should contain Esc/close hint
         var hints = tui.keyHints();
-        String hintsText = hints.stream().map(s -> s.content()).reduce("", String::concat);
+        String hintsText = hints.stream().map(Span::content).reduce("", String::concat);
         assertThat(hintsText).contains("Esc");
     }
 

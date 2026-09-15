@@ -316,12 +316,12 @@ class UpdatesTuiCoverageTest {
         // 'f' cycles filter: ALL → PATCH (no patch updates here → 0 rows)
         tui.handleKeyEvent(KeyEvent.ofChar('f'));
         // After patch filter, MINOR dep should not show
-        assertThat(tui.displayRows.size()).isLessThanOrEqualTo(initialRows);
+        assertThat(tui.displayRows).hasSizeLessThanOrEqualTo(initialRows);
 
         // 'F' cycles backwards (PATCH → MAJOR)
         tui.handleKeyEvent(KeyEvent.ofChar('F'));
         // After MAJOR filter, MINOR dep not shown
-        assertThat(tui.displayRows.size()).isLessThanOrEqualTo(initialRows);
+        assertThat(tui.displayRows).hasSizeLessThanOrEqualTo(initialRows);
     }
 
     // --- propagateLibYearsToGroups via field access ---
@@ -364,12 +364,9 @@ class UpdatesTuiCoverageTest {
 
         // After buildDisplayRows + display, propagateLibYearsToGroups should have run
         // via the refresh path triggered by onDatesComplete or onSortChanged.
-        // Check that group.libYears was set (via inspecting groups directly)
-        for (var group : result.propertyGroups) {
-            // libYears was -1 before; now should be >= 0 if propagation occurred
-            // We trigger via sort key press which calls onSortChanged → applyFilter
+        // Trigger via sort key press which calls onSortChanged → applyFilter
+        if (!result.propertyGroups.isEmpty()) {
             tui.handleKeyEvent(KeyEvent.ofChar('s'));
-            break;
         }
         // No assertion on libYears value itself since propagation is private,
         // but we verify no exception is thrown and render works
@@ -475,8 +472,6 @@ class UpdatesTuiCoverageTest {
     void switchToModulesViewAndBack() throws IOException {
         Path dir = subdir("view-switch");
         PilotProject project = createProject("com.example", "app", "1.0", dir);
-        ReactorCollector.CollectionResult result = ReactorCollector.collect(List.of(project));
-        ReactorModel model = ReactorModel.build(List.of(project));
         // Multi-module model needed for MODULES view
         Path dir2 = subdir("view-switch2");
         PilotProject p2 = createProject("com.example", "mod2", "1.0", dir2);

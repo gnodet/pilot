@@ -156,7 +156,7 @@ class Maven3PilotResolver implements PilotResolver {
             return MojoHelper.fromDependencyNode(result.getRoot());
         } catch (Exception e) {
             LOGGER.warning("collectManagedDependencyTree failed for " + mp.getGroupId() + ":" + mp.getArtifactId() + ":"
-                    + mp.getVersion() + ": " + e.getMessage());
+                    + mp.getVersion() + ": " + e);
             return emptyTree(mp);
         }
     }

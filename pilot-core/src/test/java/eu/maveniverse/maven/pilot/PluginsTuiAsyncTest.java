@@ -106,7 +106,8 @@ class PluginsTuiAsyncTest {
 
         try (var testRunner = TuiTestRunner.runTest(tui::handleEvent, tui::renderStandalone, new Size(WIDTH, HEIGHT))) {
             Pilot pilot = testRunner.pilot();
-            // Empty list → fetchAllUpdates sets loading=false synchronously before any async call
+            // setRunner triggers fetchAllUpdates; empty list → loading=false synchronously
+            tui.setRunner(testRunner.runner());
             pilot.pause();
             assertThat(tui.loading).isFalse();
             assertThat(tui.status()).contains("0 plugin update");
@@ -132,6 +133,7 @@ class PluginsTuiAsyncTest {
 
         try (var testRunner = TuiTestRunner.runTest(tui::handleEvent, tui::renderStandalone, new Size(WIDTH, HEIGHT))) {
             Pilot pilot = testRunner.pilot();
+            tui.setRunner(testRunner.runner());
             pilot.pause(Duration.ofMillis(500));
             pilot.pause();
             waitForLoading(tui);
@@ -158,6 +160,7 @@ class PluginsTuiAsyncTest {
 
         try (var testRunner = TuiTestRunner.runTest(tui::handleEvent, tui::renderStandalone, new Size(WIDTH, HEIGHT))) {
             Pilot pilot = testRunner.pilot();
+            tui.setRunner(testRunner.runner());
             pilot.pause(Duration.ofMillis(500));
             pilot.pause();
             waitForLoading(tui);
@@ -185,6 +188,7 @@ class PluginsTuiAsyncTest {
 
         try (var testRunner = TuiTestRunner.runTest(tui::handleEvent, tui::renderStandalone, new Size(WIDTH, HEIGHT))) {
             Pilot pilot = testRunner.pilot();
+            tui.setRunner(testRunner.runner());
             pilot.pause(Duration.ofMillis(500));
             pilot.pause();
             waitForLoading(tui);
@@ -219,6 +223,7 @@ class PluginsTuiAsyncTest {
 
         try (var testRunner = TuiTestRunner.runTest(tui::handleEvent, tui::renderStandalone, new Size(WIDTH, HEIGHT))) {
             Pilot pilot = testRunner.pilot();
+            tui.setRunner(testRunner.runner());
             pilot.pause(Duration.ofMillis(500));
             pilot.pause();
             waitForLoading(tui);
@@ -251,6 +256,7 @@ class PluginsTuiAsyncTest {
 
         try (var testRunner = TuiTestRunner.runTest(tui::handleEvent, tui::renderStandalone, new Size(WIDTH, HEIGHT))) {
             Pilot pilot = testRunner.pilot();
+            tui.setRunner(testRunner.runner());
             pilot.pause(Duration.ofMillis(500));
             pilot.pause();
             waitForLoading(tui);
@@ -289,6 +295,7 @@ class PluginsTuiAsyncTest {
 
         try (var testRunner = TuiTestRunner.runTest(tui::handleEvent, tui::renderStandalone, new Size(WIDTH, HEIGHT))) {
             Pilot pilot = testRunner.pilot();
+            tui.setRunner(testRunner.runner());
             pilot.pause(Duration.ofMillis(500));
             pilot.pause();
             waitForLoading(tui);
@@ -322,6 +329,7 @@ class PluginsTuiAsyncTest {
 
         try (var testRunner = TuiTestRunner.runTest(tui::handleEvent, tui::renderStandalone, new Size(WIDTH, HEIGHT))) {
             Pilot pilot = testRunner.pilot();
+            tui.setRunner(testRunner.runner()); // should NOT trigger refetch since loading=false
             pilot.pause(Duration.ofMillis(200));
             pilot.pause();
             assertThat(callCount[0]).isZero();
@@ -349,6 +357,7 @@ class PluginsTuiAsyncTest {
 
         try (var testRunner = TuiTestRunner.runTest(tui::handleEvent, tui::renderStandalone, new Size(WIDTH, HEIGHT))) {
             Pilot pilot = testRunner.pilot();
+            tui.setRunner(testRunner.runner());
             pilot.pause(Duration.ofMillis(300));
             pilot.pause();
             waitForLoading(tui);
@@ -357,13 +366,13 @@ class PluginsTuiAsyncTest {
             String rendered = TuiTestHelper.render(tui::renderStandalone);
             assertThat(rendered).contains("maven-compiler-plugin").contains("maven-surefire-plugin");
 
-            // Managed view
-            tui.handleKeyEvent(KeyEvent.ofChar('2'));
+            // Managed view — dispatch digit key directly (synchronous, avoids race with TuiTestHelper.render)
+            tui.handleEvent(KeyEvent.ofChar('2'), null);
             rendered = TuiTestHelper.render(tui::renderStandalone);
             assertThat(rendered).contains("maven-jar-plugin");
 
             // Updates view (empty — no updates)
-            tui.handleKeyEvent(KeyEvent.ofChar('3'));
+            tui.handleEvent(KeyEvent.ofChar('3'), null);
             rendered = TuiTestHelper.render(tui::renderStandalone);
             assertThat(rendered).isNotEmpty();
 
@@ -387,12 +396,14 @@ class PluginsTuiAsyncTest {
 
         try (var testRunner = TuiTestRunner.runTest(tui::handleEvent, tui::renderStandalone, new Size(WIDTH, HEIGHT))) {
             Pilot pilot = testRunner.pilot();
+            tui.setRunner(testRunner.runner());
             pilot.pause(Duration.ofMillis(500));
             pilot.pause();
             waitForLoading(tui);
 
             // Switch to Updates view
-            tui.handleKeyEvent(KeyEvent.ofChar('3'));
+            pilot.press('3');
+            pilot.pause();
             String rendered = TuiTestHelper.render(tui::renderStandalone);
             assertThat(rendered).contains("maven-compiler-plugin");
             // Updates view header should show
@@ -422,6 +433,7 @@ class PluginsTuiAsyncTest {
 
         try (var testRunner = TuiTestRunner.runTest(tui::handleEvent, tui::renderStandalone, new Size(WIDTH, HEIGHT))) {
             Pilot pilot = testRunner.pilot();
+            tui.setRunner(testRunner.runner());
             pilot.pause(Duration.ofMillis(300));
             pilot.pause();
             waitForLoading(tui);
@@ -456,12 +468,14 @@ class PluginsTuiAsyncTest {
 
         try (var testRunner = TuiTestRunner.runTest(tui::handleEvent, tui::renderStandalone, new Size(WIDTH, HEIGHT))) {
             Pilot pilot = testRunner.pilot();
+            tui.setRunner(testRunner.runner());
             pilot.pause(Duration.ofMillis(500));
             pilot.pause();
             waitForLoading(tui);
 
             // Switch to Updates view
-            tui.handleKeyEvent(KeyEvent.ofChar('3'));
+            pilot.press('3');
+            pilot.pause();
             // Sort in Updates view
             tui.handleKeyEvent(KeyEvent.ofChar('s'));
             tui.handleKeyEvent(KeyEvent.ofChar('S'));
@@ -490,12 +504,14 @@ class PluginsTuiAsyncTest {
 
         try (var testRunner = TuiTestRunner.runTest(tui::handleEvent, tui::renderStandalone, new Size(WIDTH, HEIGHT))) {
             Pilot pilot = testRunner.pilot();
+            tui.setRunner(testRunner.runner());
             pilot.pause(Duration.ofMillis(500));
             pilot.pause();
             waitForLoading(tui);
 
             // Switch to Updates view
-            tui.handleKeyEvent(KeyEvent.ofChar('3'));
+            pilot.press('3');
+            pilot.pause();
 
             // Cycle filter 4 times (ALL → PATCH → MINOR → MAJOR → ALL)
             for (int i = 0; i < 4; i++) {
@@ -528,6 +544,7 @@ class PluginsTuiAsyncTest {
 
         try (var testRunner = TuiTestRunner.runTest(tui::handleEvent, tui::renderStandalone, new Size(WIDTH, HEIGHT))) {
             Pilot pilot = testRunner.pilot();
+            tui.setRunner(testRunner.runner());
             pilot.pause(Duration.ofMillis(300));
             pilot.pause();
             waitForLoading(tui);

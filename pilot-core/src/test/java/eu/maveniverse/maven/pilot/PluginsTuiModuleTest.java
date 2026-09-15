@@ -171,12 +171,13 @@ class PluginsTuiModuleTest {
         List<PilotProject.Plugin> twoManaged = List.of(
                 new PilotProject.Plugin("org.apache.maven.plugins", "maven-jar-plugin", "3.3.0"),
                 new PilotProject.Plugin("org.apache.maven.plugins", "maven-assembly-plugin", "3.6.0"));
-        List<PilotProject.Plugin> onePlugin =
-                List.of(new PilotProject.Plugin("org.apache.maven.plugins", "maven-compiler-plugin", "3.11.0"));
+        List<PilotProject.Plugin> twoUpdatesPlugins = List.of(
+                new PilotProject.Plugin("org.apache.maven.plugins", "maven-surefire-plugin", "3.2.5"),
+                new PilotProject.Plugin("org.apache.maven.plugins", "maven-compiler-plugin", "3.11.0"));
         return Stream.of(
                 Arguments.of("Plugins view", 0, twoPlugins, List.of(), false),
                 Arguments.of("Managed view", 1, List.of(), twoManaged, false),
-                Arguments.of("Updates view", 2, onePlugin, List.of(), true));
+                Arguments.of("Updates view", 2, twoUpdatesPlugins, List.of(), true));
     }
 
     @ParameterizedTest(name = "sort key handled in {0}")
@@ -192,14 +193,45 @@ class PluginsTuiModuleTest {
         PilotProject project = createProject("com.example", "app", "1.0", dir, plugins, managedPlugins);
         PluginsTui tui = createTui(project, List.of(project));
         if (setLoadingFalse) {
+            // Simulate versions resolved with updates available so both entries appear in Updates view
             tui.loading = false;
+            for (PluginsTui.PluginEntry e : tui.plugins) {
+                e.newestVersion = "3.14.0";
+                e.updateType = VersionComparator.UpdateType.MINOR;
+            }
+            tui.applyFilter();
         }
         tui.setActiveSubView(subView);
 
-        // s key → triggers sort (should not throw)
-        assertThat(tui.handleKeyEvent(KeyEvent.ofChar('s'))).isTrue();
-        String output = TuiTestHelper.render(tui::renderStandalone);
-        assertThat(output).isNotEmpty();
+        // For the Updates view the first sort column is the update-type icon (same for all entries here),
+        // so we advance to the GA column (column index 1 for Updates, 0 for Plugins/Managed).
+        // Press s once for Plugins/Managed (column 0 = ga), twice for Updates (column 1 = ga).
+        int gaColumnPresses = (subView == 2) ? 2 : 1;
+        for (int i = 0; i < gaColumnPresses; i++) {
+            assertThat(tui.handleKeyEvent(KeyEvent.ofChar('s'))).isTrue();
+        }
+
+        // After sorting by GA ascending, entries must appear in case-insensitive alphabetical order
+        List<String> afterAsc = currentGas(tui, subView);
+        List<String> sortedAsc =
+                afterAsc.stream().sorted(String.CASE_INSENSITIVE_ORDER).toList();
+        assertThat(afterAsc).isEqualTo(sortedAsc);
+
+        // S → reverse direction: descending
+        assertThat(tui.handleKeyEvent(KeyEvent.ofChar('S'))).isTrue();
+        List<String> afterDesc = currentGas(tui, subView);
+        List<String> sortedDesc = afterAsc.stream()
+                .sorted(String.CASE_INSENSITIVE_ORDER.reversed())
+                .toList();
+        assertThat(afterDesc).isEqualTo(sortedDesc);
+    }
+
+    private static List<String> currentGas(PluginsTui tui, int subView) {
+        return switch (subView) {
+            case 0 -> tui.plugins.stream().map(PluginsTui.PluginEntry::ga).toList();
+            case 1 -> tui.managed.stream().map(PluginsTui.PluginEntry::ga).toList();
+            default -> tui.updates.stream().map(PluginsTui.PluginEntry::ga).toList();
+        };
     }
 
     // --- Digit key view switching in standalone ---
@@ -398,7 +430,7 @@ class PluginsTuiModuleTest {
         assertThat(hasPluginBrowser).isTrue();
     }
 
-    // --- applyVersionResult via field manipulation ---
+    // --- applyVersionResult via direct call ---
 
     @Test
     void applyVersionResultPopulatesNewestVersionAndUpdateType() throws IOException {
@@ -412,15 +444,12 @@ class PluginsTuiModuleTest {
                 List.of());
         PluginsTui tui = createTui(project, List.of(project));
 
-        // Manually set newestVersion and updateType (simulating what applyVersionResult does)
-        for (PluginsTui.PluginEntry e : tui.plugins) {
-            e.newestVersion = "3.14.0";
-            e.updateType = VersionComparator.UpdateType.MINOR;
-        }
+        // Drive the actual applyVersionResult path with a sorted version list (newest first)
+        tui.applyVersionResult(tui.plugins, List.of("3.14.0", "3.13.0", "3.11.0-beta", "3.11.0"));
         tui.loading = false;
         tui.applyFilter();
 
-        // updates list should now contain the entry
+        // updates list should now contain the entry with the correct newest version and update type
         assertThat(tui.updates).hasSize(1);
         assertThat(tui.updates.get(0).newestVersion).isEqualTo("3.14.0");
         assertThat(tui.updates.get(0).updateType).isEqualTo(VersionComparator.UpdateType.MINOR);
@@ -525,7 +554,7 @@ class PluginsTuiModuleTest {
         assertThat(tui.status()).contains("No match");
     }
 
-    // --- computeLibYear via direct field manipulation ---
+    // --- computeLibYear direct test ---
 
     @Test
     void computeLibYearSetsLibYearsWhenBothDatesSet() throws IOException {
@@ -539,14 +568,12 @@ class PluginsTuiModuleTest {
                 List.of());
         PluginsTui tui = createTui(project, List.of(project));
 
-        // Manually set release dates — computeLibYear checks both dates are non-null
         for (PluginsTui.PluginEntry e : tui.plugins) {
             e.currentReleaseDate = LocalDate.of(2022, 1, 1);
             e.newestReleaseDate = LocalDate.of(2023, 1, 1);
-            // computeLibYear: weeks = ~52, libYears = ~1.0
-            // Verify field is accessible and computable
-            assertThat(e.currentReleaseDate).isNotNull();
-            assertThat(e.newestReleaseDate).isNotNull();
+            tui.computeLibYear(e);
+            // ~52 weeks → libYears ≈ 1.0
+            assertThat(e.libYears).isGreaterThan(0.9f).isLessThan(1.1f);
         }
     }
 }

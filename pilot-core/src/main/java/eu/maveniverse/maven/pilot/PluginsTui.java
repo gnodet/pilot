@@ -65,7 +65,7 @@ public class PluginsTui extends ToolPanel {
         /** Per-module version: module name → declared version (null if inherited/absent). */
         final Map<String, String> moduleVersions = new LinkedHashMap<>();
 
-        String newestVersion;
+        volatile String newestVersion;
         VersionComparator.UpdateType updateType;
         LocalDate currentReleaseDate;
         LocalDate newestReleaseDate;
@@ -128,10 +128,10 @@ public class PluginsTui extends ToolPanel {
 
     private View view = View.PLUGINS;
     private Filter filter = Filter.ALL;
-    String statusText = "Loading updates\u2026";
-    boolean loading = true;
+    volatile String statusText = "Loading updates\u2026";
+    volatile boolean loading = true;
     int loadedCount;
-    int failedCount;
+    volatile int failedCount;
     int dateFetchesPending;
     boolean datesLoading;
     private int lastContentHeight;
@@ -233,7 +233,7 @@ public class PluginsTui extends ToolPanel {
         }
     }
 
-    private void applyVersionResult(List<PluginEntry> entries, List<String> versions) {
+    void applyVersionResult(List<PluginEntry> entries, List<String> versions) {
         for (PluginEntry entry : entries) {
             versions.stream()
                     .filter(v -> !VersionComparator.isPreview(v))
@@ -331,7 +331,7 @@ public class PluginsTui extends ToolPanel {
                 });
     }
 
-    private void computeLibYear(PluginEntry entry) {
+    void computeLibYear(PluginEntry entry) {
         if (entry.currentReleaseDate != null && entry.newestReleaseDate != null) {
             long weeks = ChronoUnit.WEEKS.between(entry.currentReleaseDate, entry.newestReleaseDate);
             entry.libYears = Math.max(0, weeks / 52.0f);

@@ -39,9 +39,18 @@ class ConflictsMojoTest {
     // --- action validation ---
 
     @Test
-    void defaultActionIsTui() {
+    void defaultActionIsReport() {
         var mojo = new ConflictsMojo();
-        assertThat(mojo.action).isEqualTo("tui");
+        assertThat(mojo.action).isEqualTo("report");
+    }
+
+    @Test
+    void rejectsTuiAction() {
+        var mojo = new ConflictsMojo();
+        mojo.action = "tui";
+        assertThatThrownBy(mojo::execute)
+                .isInstanceOf(MojoExecutionException.class)
+                .hasMessageContaining("Invalid action 'tui'");
     }
 
     @Test
@@ -50,8 +59,7 @@ class ConflictsMojoTest {
         mojo.action = "fix";
         assertThatThrownBy(mojo::execute)
                 .isInstanceOf(MojoExecutionException.class)
-                .hasMessageContaining("fix")
-                .hasMessageContaining("not supported");
+                .hasMessageContaining("Invalid action 'fix'");
     }
 
     @Test
@@ -65,69 +73,11 @@ class ConflictsMojoTest {
 
     @Test
     void acceptsValidActions() {
-        for (String a : List.of("tui", "report", "check")) {
+        for (String a : List.of("report", "check")) {
             var mojo = new ConflictsMojo();
             mojo.action = a;
             assertThat(mojo.action).isEqualTo(a);
         }
-    }
-
-    // --- resolveAction / headless fallback ---
-
-    @Test
-    void resolveActionSwitchesTuiToReportWhenHeadless() {
-        var mojo = new ConflictsMojo() {
-            @Override
-            boolean isHeadless() {
-                return true;
-            }
-        };
-        assertThat(mojo.action).isEqualTo("tui");
-
-        mojo.resolveAction();
-
-        assertThat(mojo.action)
-                .as("tui must be rerouted to report in headless environments")
-                .isEqualTo("report");
-    }
-
-    @Test
-    void resolveActionPreservesExplicitActionsWhenHeadless() {
-        for (String a : List.of("check", "report")) {
-            var mojo = new ConflictsMojo() {
-                @Override
-                boolean isHeadless() {
-                    return true;
-                }
-            };
-            mojo.action = a;
-            mojo.resolveAction();
-            assertThat(mojo.action).as("action=%s must not be mutated", a).isEqualTo(a);
-        }
-    }
-
-    @Test
-    void resolveActionPreservesTuiWhenInteractive() {
-        var mojo = new ConflictsMojo() {
-            @Override
-            boolean isHeadless() {
-                return false;
-            }
-        };
-        mojo.resolveAction();
-        assertThat(mojo.action).isEqualTo("tui");
-    }
-
-    @Test
-    void isHeadlessTrueWhenNoConsole() {
-        assertThat(System.console()).isNull();
-        var mojo = new ConflictsMojo() {
-            @Override
-            boolean isHeadless() {
-                return System.console() == null;
-            }
-        };
-        assertThat(mojo.isHeadless()).isTrue();
     }
 
     // --- collectConflicts: dependency-management version override detection ---

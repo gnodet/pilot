@@ -39,21 +39,20 @@ import org.eclipse.aether.graph.DependencyNode;
 import org.eclipse.aether.util.graph.manager.DependencyManagerUtils;
 
 /**
- * Detect version conflicts across the dependency tree — interactive TUI or headless report/check.
+ * Detect version conflicts across the dependency tree — report or check mode.
  *
- * <p>Three actions via {@code -Dpilot.action}:</p>
+ * <p>Two actions via {@code -Dpilot.action}:</p>
  * <ul>
- *   <li><b>tui</b> (default) — interactive TUI; pin versions to {@code dependencyManagement}</li>
- *   <li><b>report</b> — prints conflicts as plain text, exits 0 even when conflicts exist</li>
+ *   <li><b>report</b> (default) — prints conflicts as plain text, exits 0 even when conflicts exist</li>
  *   <li><b>check</b> — prints conflicts and fails the build when any are found</li>
  * </ul>
  *
- * <p>{@code fix} is not supported (use the TUI to interactively pin versions).</p>
+ * <p>For interactive conflict resolution (pinning versions to {@code dependencyManagement}),
+ * use {@code pilot:pilot} instead.</p>
  *
  * <p>Usage:</p>
  * <pre>
  * mvn pilot:conflicts
- * mvn pilot:conflicts -Dpilot.action=report
  * mvn pilot:conflicts -Dpilot.action=check
  * </pre>
  *
@@ -75,24 +74,17 @@ public class ConflictsMojo extends AbstractMojo {
     private RepositorySystem repoSystem;
 
     /**
-     * Action to perform: {@code tui} (default) launches the interactive TUI;
-     * {@code report} prints conflicts as plain text (exits 0);
+     * Action to perform: {@code report} (default) prints conflicts as plain text (exits 0);
      * {@code check} prints conflicts and fails the build if any are found.
-     * {@code fix} is not supported — use the TUI to interactively pin versions.
      */
-    @Parameter(property = "pilot.action", defaultValue = "tui")
-    String action = "tui";
+    @Parameter(property = "pilot.action", defaultValue = "report")
+    String action = "report";
 
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
-        if (!"tui".equals(action) && !"report".equals(action) && !"check".equals(action) && !"fix".equals(action)) {
-            throw new MojoExecutionException("Invalid action '" + action + "'. Supported values: tui, report, check.");
+        if (!"report".equals(action) && !"check".equals(action)) {
+            throw new MojoExecutionException("Invalid action '" + action + "'. Supported values: report, check.");
         }
-        if ("fix".equals(action)) {
-            throw new MojoExecutionException(
-                    "Action 'fix' is not supported for pilot:conflicts — use the TUI to interactively pin versions.");
-        }
-        resolveAction();
         try {
             List<MavenProject> projects = session.getProjects();
             if (projects.size() > 1) {
@@ -107,37 +99,10 @@ public class ConflictsMojo extends AbstractMojo {
         }
     }
 
-    /**
-     * Falls back from {@code tui} to {@code report} in non-interactive environments.
-     * Package-private for testing.
-     */
-    void resolveAction() {
-        if ("tui".equals(action) && isHeadless()) {
-            getLog().info("Non-interactive environment detected; falling back to action=report"
-                    + " (use -Dpilot.action=report to suppress this message).");
-            action = "report";
-        }
-    }
-
-    /**
-     * Returns true when the environment has no interactive terminal.
-     * Package-private for testing.
-     */
-    boolean isHeadless() {
-        return !session.getRequest().isInteractiveMode() || System.console() == null;
-    }
-
     private void executeSingleProject(MavenProject proj) throws Exception {
         List<ConflictsTui.ConflictGroup> conflicts = collectConflictsForProject(proj);
         String gav = proj.getGroupId() + ":" + proj.getArtifactId() + ":" + proj.getVersion();
-
-        if ("report".equals(action) || "check".equals(action)) {
-            executeNonInteractive(conflicts, gav);
-        } else {
-            String pomPath = proj.getFile().getAbsolutePath();
-            ConflictsTui tui = new ConflictsTui(conflicts, pomPath, gav);
-            tui.runStandalone();
-        }
+        executeNonInteractive(conflicts, gav);
     }
 
     private void executeReactor(List<MavenProject> projects) throws Exception {
@@ -159,13 +124,7 @@ public class ConflictsMojo extends AbstractMojo {
         String gav = root.getGroupId() + ":" + root.getArtifactId() + ":" + root.getVersion() + " (reactor: "
                 + projects.size() + " modules)";
 
-        if ("report".equals(action) || "check".equals(action)) {
-            executeNonInteractive(conflicts, gav);
-        } else {
-            String pomPath = root.getFile().getAbsolutePath();
-            ConflictsTui tui = new ConflictsTui(conflicts, pomPath, gav);
-            tui.runStandalone();
-        }
+        executeNonInteractive(conflicts, gav);
     }
 
     private void executeNonInteractive(List<ConflictsTui.ConflictGroup> conflicts, String gav)

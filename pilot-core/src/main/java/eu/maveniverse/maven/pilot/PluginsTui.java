@@ -128,7 +128,7 @@ public class PluginsTui extends ToolPanel {
 
     private View view = View.PLUGINS;
     private Filter filter = Filter.ALL;
-    private String statusText = "Loading updates\u2026";
+    String statusText = "Loading updates\u2026";
     boolean loading = true;
     int loadedCount;
     int failedCount;

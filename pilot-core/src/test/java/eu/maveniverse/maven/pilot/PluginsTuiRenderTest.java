@@ -188,7 +188,7 @@ class PluginsTuiRenderTest {
         // Press Enter to confirm
         tui.handleKeyEvent(KeyEvent.ofKey(KeyCode.ENTER));
         // Now active search is set, status reflects match count
-        assertThat(tui.status()).isNotNull();
+        assertThat(tui.status()).contains("1 match");
     }
 
     @Test
@@ -417,7 +417,7 @@ class PluginsTuiRenderTest {
 
         // Status should include match count
         String status = tui.status();
-        assertThat(status).isNotNull().contains("match");
+        assertThat(status).contains("match");
     }
 
     @Test
@@ -574,9 +574,10 @@ class PluginsTuiRenderTest {
         PluginsTui tui = createTui(project, List.of(project));
         tui.loading = false;
         tui.applyFilter();
-        // manually trigger onVersionsComplete equivalent
+        // Simulate statusText update that onVersionsComplete() would perform
+        tui.statusText = "0 plugin update(s) available";
         String status = tui.status();
-        assertThat(status).isNotNull();
+        assertThat(status).doesNotContain("Loading");
     }
 
     @Test

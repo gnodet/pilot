@@ -154,7 +154,7 @@ public class TreeMojo extends AbstractMojo {
         }
     }
 
-    private String formatNode(DependencyTreeModel.TreeNode node) {
+    String formatNode(DependencyTreeModel.TreeNode node) {
         StringBuilder sb = new StringBuilder();
         sb.append(node.groupId)
                 .append(":")

@@ -229,6 +229,7 @@ public class DependencyTreeModel {
                 source.groupId,
                 source.artifactId,
                 source.classifier,
+                source.extension,
                 source.version,
                 source.scope,
                 source.optional,

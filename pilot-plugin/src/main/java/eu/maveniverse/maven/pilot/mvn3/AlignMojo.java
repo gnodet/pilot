@@ -27,6 +27,7 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.PosixFileAttributeView;
 import java.util.List;
 import java.util.Locale;
 import org.apache.maven.execution.MavenSession;
@@ -211,8 +212,8 @@ public class AlignMojo extends AbstractMojo {
             try {
                 naming = AlignOptions.PropertyNamingConvention.valueOf(namingConvention.toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException e) {
-                throw new MojoExecutionException(
-                        "Invalid pilot.namingConvention '" + namingConvention + "'. Valid values: DOTTED, FLAT.");
+                throw new MojoExecutionException("Invalid pilot.namingConvention '" + namingConvention
+                        + "'. Valid values: DOT_SUFFIX, DASH_SUFFIX, CAMEL_CASE, DOT_PREFIX.");
             }
         }
 
@@ -250,10 +251,19 @@ public class AlignMojo extends AbstractMojo {
 
     /**
      * Writes {@code content} to {@code target} atomically (temp file + rename).
+     * Preserves the target's POSIX permissions on the temporary file where supported.
      */
     private void writePom(Path target, String content) throws IOException {
         Path tmp = Files.createTempFile(target.getParent(), target.getFileName() + ".pilot-align-", ".tmp");
         try {
+            // Preserve POSIX permissions from the original POM (best-effort; no-op on non-POSIX fs)
+            var posixTarget = Files.getFileAttributeView(target, PosixFileAttributeView.class);
+            if (posixTarget != null) {
+                var posixTmp = Files.getFileAttributeView(tmp, PosixFileAttributeView.class);
+                if (posixTmp != null) {
+                    posixTmp.setPermissions(posixTarget.readAttributes().permissions());
+                }
+            }
             Files.writeString(tmp, content);
             try {
                 Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);

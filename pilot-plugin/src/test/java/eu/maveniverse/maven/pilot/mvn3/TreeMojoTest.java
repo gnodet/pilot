@@ -21,6 +21,7 @@ package eu.maveniverse.maven.pilot.mvn3;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import eu.maveniverse.maven.pilot.DependencyTreeModel;
 import java.util.List;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.junit.jupiter.api.Test;
@@ -125,5 +126,42 @@ class TreeMojoTest {
             mojo.action = a;
             assertThat(mojo.action).isEqualTo(a);
         }
+    }
+
+    // --- formatNode ---
+
+    @Test
+    void formatNodeEmitsExtensionWhenPresent() {
+        var mojo = new TreeMojo();
+        var node = new DependencyTreeModel.TreeNode("com.example", "myapp", "", "war", "1.0", "compile", false, 1);
+        assertThat(mojo.formatNode(node)).isEqualTo("com.example:myapp:war:1.0");
+    }
+
+    @Test
+    void formatNodeFallsBackToJarWhenExtensionEmpty() {
+        var mojo = new TreeMojo();
+        var node = new DependencyTreeModel.TreeNode("com.example", "myapp", "", "", "1.0", "compile", false, 1);
+        assertThat(mojo.formatNode(node)).isEqualTo("com.example:myapp:jar:1.0");
+    }
+
+    @Test
+    void formatNodeIncludesClassifierBetweenTypeAndVersion() {
+        var mojo = new TreeMojo();
+        var node = new DependencyTreeModel.TreeNode("org.foo", "bar", "tests", "jar", "1.0", "test", false, 1);
+        assertThat(mojo.formatNode(node)).isEqualTo("org.foo:bar:jar:tests:1.0:test");
+    }
+
+    @Test
+    void formatNodeSuppressesCompileScope() {
+        var mojo = new TreeMojo();
+        var node = new DependencyTreeModel.TreeNode("com.example", "myapp", "", "jar", "1.0", "compile", false, 1);
+        assertThat(mojo.formatNode(node)).isEqualTo("com.example:myapp:jar:1.0");
+    }
+
+    @Test
+    void formatNodeIncludesNonCompileScope() {
+        var mojo = new TreeMojo();
+        var node = new DependencyTreeModel.TreeNode("com.example", "myapp", "", "jar", "1.0", "test", false, 1);
+        assertThat(mojo.formatNode(node)).isEqualTo("com.example:myapp:jar:1.0:test");
     }
 }

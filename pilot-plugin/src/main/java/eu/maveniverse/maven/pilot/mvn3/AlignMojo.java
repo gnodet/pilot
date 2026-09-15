@@ -96,7 +96,7 @@ public class AlignMojo extends AbstractMojo {
 
     /**
      * Target property naming convention for headless modes.
-     * One of: {@code DOTTED}, {@code FLAT}.
+     * One of: {@code DOT_SUFFIX}, {@code DASH_SUFFIX}, {@code CAMEL_CASE}, {@code DOT_PREFIX}.
      * When omitted, the detected convention is used as default.
      */
     @Parameter(property = "pilot.namingConvention")

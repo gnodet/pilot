@@ -157,6 +157,11 @@ public class DependenciesMojo extends AbstractMojo {
             }
         }
 
+        // Build set of GAs already managed by an ancestor BOM/parent POM (not by this module itself).
+        // When a transitive dependency is already version-managed by an ancestor, the fix action
+        // should add it without a <version> element rather than hardcoding the resolved literal.
+        Set<String> ancestorManagedGAs = buildAncestorManagedGAs(proj);
+
         Path classesDir = Path.of(proj.getBuild().getOutputDirectory());
         Path testClassesDir = Path.of(proj.getBuild().getTestOutputDirectory());
 
@@ -183,7 +188,47 @@ public class DependenciesMojo extends AbstractMojo {
                     "target/classes not found — run 'mvn compile' before dependencies report/check/fix.");
         }
 
-        executeNonInteractive(proj, declared, transitive, gaToVersion);
+        executeNonInteractive(proj, declared, transitive, gaToVersion, ancestorManagedGAs);
+    }
+
+    /**
+     * Computes the set of {@code groupId:artifactId} keys that are version-managed by an ancestor
+     * POM or imported BOM, but <em>not</em> declared in this module's own {@code
+     * <dependencyManagement>} section.
+     *
+     * <p>When a used-transitive dependency is already managed by an ancestor, the fix action
+     * should add it to {@code <dependencies>} without a {@code <version>} element.</p>
+     */
+    static Set<String> buildAncestorManagedGAs(MavenProject proj) {
+        // Collect GAs declared in this module's own <dependencyManagement>
+        Set<String> ownManagedGAs = new HashSet<>();
+        if (proj.getOriginalModel().getDependencyManagement() != null
+                && proj.getOriginalModel().getDependencyManagement().getDependencies() != null) {
+            for (Dependency dep :
+                    proj.getOriginalModel().getDependencyManagement().getDependencies()) {
+                String classifier = dep.getClassifier();
+                String ga = (classifier != null && !classifier.isEmpty())
+                        ? dep.getGroupId() + ":" + dep.getArtifactId() + ":" + classifier
+                        : dep.getGroupId() + ":" + dep.getArtifactId();
+                ownManagedGAs.add(ga);
+            }
+        }
+
+        // Any GA in the effective <dependencyManagement> but not in the own section is ancestor-managed
+        Set<String> ancestorManagedGAs = new HashSet<>();
+        if (proj.getDependencyManagement() != null
+                && proj.getDependencyManagement().getDependencies() != null) {
+            for (Dependency dep : proj.getDependencyManagement().getDependencies()) {
+                String classifier = dep.getClassifier();
+                String ga = (classifier != null && !classifier.isEmpty())
+                        ? dep.getGroupId() + ":" + dep.getArtifactId() + ":" + classifier
+                        : dep.getGroupId() + ":" + dep.getArtifactId();
+                if (!ownManagedGAs.contains(ga)) {
+                    ancestorManagedGAs.add(ga);
+                }
+            }
+        }
+        return ancestorManagedGAs;
     }
 
     void executeNonInteractive(
@@ -191,6 +236,16 @@ public class DependenciesMojo extends AbstractMojo {
             List<DependenciesTui.DepEntry> declared,
             List<DependenciesTui.DepEntry> transitive,
             Map<String, String> gaToVersion)
+            throws Exception {
+        executeNonInteractive(proj, declared, transitive, gaToVersion, Set.of());
+    }
+
+    void executeNonInteractive(
+            MavenProject proj,
+            List<DependenciesTui.DepEntry> declared,
+            List<DependenciesTui.DepEntry> transitive,
+            Map<String, String> gaToVersion,
+            Set<String> ancestorManagedGAs)
             throws Exception {
         List<DependenciesTui.DepEntry> unusedDeclared = new ArrayList<>();
         for (var dep : declared) {
@@ -219,7 +274,12 @@ public class DependenciesMojo extends AbstractMojo {
         switch (action) {
             case "fix" ->
                 DependenciesReporter.fix(
-                        proj.getFile().toPath(), unusedDeclared, usedTransitive, gaToVersion, getLog()::info);
+                        proj.getFile().toPath(),
+                        unusedDeclared,
+                        usedTransitive,
+                        gaToVersion,
+                        ancestorManagedGAs,
+                        getLog()::info);
             case "report" -> getLog().warn(DependenciesReporter.formatFindings(unusedDeclared, usedTransitive));
             default ->
                 throw new MojoFailureException(DependenciesReporter.formatCheckFailure(unusedDeclared, usedTransitive));

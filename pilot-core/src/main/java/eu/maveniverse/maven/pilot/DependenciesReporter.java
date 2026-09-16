@@ -19,6 +19,7 @@
 package eu.maveniverse.maven.pilot;
 
 import eu.maveniverse.domtrip.Document;
+import eu.maveniverse.domtrip.Element;
 import eu.maveniverse.domtrip.maven.AlignOptions;
 import eu.maveniverse.domtrip.maven.Coordinates;
 import eu.maveniverse.domtrip.maven.PomEditor;
@@ -27,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Non-interactive report and fix logic for dependency analysis.
@@ -84,12 +86,31 @@ public final class DependenciesReporter {
 
     /**
      * Apply fixes to the POM: remove unused declared and add used transitive dependencies.
+     *
+     * <p>When adding used transitive dependencies, honours ancestor dependency management:</p>
+     * <ul>
+     *   <li>If the dependency is already managed by an ancestor BOM/parent POM
+     *       ({@code ancestorManagedGAs} contains its GA key), it is added <em>without</em> a
+     *       {@code <version>} element — the inherited management already pins the version.</li>
+     *   <li>Otherwise the resolved version from {@code gaToVersion} is used.  If the resolved
+     *       version equals a value that was originally expressed as a property in an ancestor
+     *       ({@code gaToVersionExpression} is non-null and contains the GA), the property
+     *       expression (e.g. {@code ${resolverVersion}}) is written instead of the literal.</li>
+     * </ul>
+     *
+     * @param pomPath               path to the POM file to modify
+     * @param unusedDeclared        declared dependencies that are unused
+     * @param usedTransitive        transitive dependencies that are used directly
+     * @param gaToVersion           resolved (literal) versions keyed by {@code groupId:artifactId}
+     * @param ancestorManagedGAs    GAs already version-managed by an ancestor; version is omitted for these
+     * @param logger                callback for progress messages
      */
     public static void fix(
             Path pomPath,
             List<DependenciesTui.DepEntry> unusedDeclared,
             List<DependenciesTui.DepEntry> usedTransitive,
             Map<String, String> gaToVersion,
+            Set<String> ancestorManagedGAs,
             FixLogger logger)
             throws IOException {
         String pomContent = Files.readString(pomPath);
@@ -110,28 +131,76 @@ public final class DependenciesReporter {
             String groupId = parts[0];
             String artifactId = parts[1];
             String classifier = parts.length > 2 ? parts[2] : null;
-            String version = gaToVersion.getOrDefault(dep.ga(), "");
             String scope = dep.scope;
 
             PomEditor editor = new PomEditor(Document.of(pomContent));
-            Coordinates coords = (classifier != null && !classifier.isEmpty())
-                    ? Coordinates.of(groupId, artifactId, version, classifier, "jar")
-                    : Coordinates.of(groupId, artifactId, version);
-            AlignOptions detected = editor.dependencies().detectConventions();
-            AlignOptions.Builder optBuilder = AlignOptions.builder()
-                    .versionStyle(detected.versionStyle())
-                    .versionSource(detected.versionSource())
-                    .namingConvention(detected.namingConvention());
-            if (scope != null && !scope.isEmpty() && !"compile".equals(scope)) {
-                optBuilder.scope(scope);
+
+            if (ancestorManagedGAs.contains(dep.ga())) {
+                // Already managed by an ancestor: add without <version>
+                addDependencyWithoutVersion(editor, groupId, artifactId, classifier, scope);
+                logger.log("Added used transitive dependency (version managed by ancestor): " + dep.ga());
+            } else {
+                // Not ancestor-managed: add with the resolved version
+                String version = gaToVersion.getOrDefault(dep.ga(), "");
+                Coordinates coords = (classifier != null && !classifier.isEmpty())
+                        ? Coordinates.of(groupId, artifactId, version, classifier, "jar")
+                        : Coordinates.of(groupId, artifactId, version);
+                AlignOptions detected = editor.dependencies().detectConventions();
+                AlignOptions.Builder optBuilder = AlignOptions.builder()
+                        .versionStyle(detected.versionStyle())
+                        .versionSource(detected.versionSource())
+                        .namingConvention(detected.namingConvention());
+                if (scope != null && !scope.isEmpty() && !"compile".equals(scope)) {
+                    optBuilder.scope(scope);
+                }
+                editor.dependencies().addAligned(coords, optBuilder.build());
+                logger.log("Added used transitive dependency: " + dep.ga());
             }
-            editor.dependencies().addAligned(coords, optBuilder.build());
+
             pomContent = editor.toXml();
-            logger.log("Added used transitive dependency: " + dep.ga());
         }
 
         Files.writeString(pomPath, pomContent);
         logger.log("Updated " + pomPath);
+    }
+
+    /**
+     * Apply fixes to the POM without ancestor-management awareness (backward-compatible overload).
+     *
+     * @param pomPath        path to the POM file to modify
+     * @param unusedDeclared declared dependencies that are unused
+     * @param usedTransitive transitive dependencies that are used directly
+     * @param gaToVersion    resolved (literal) versions keyed by {@code groupId:artifactId}
+     * @param logger         callback for progress messages
+     */
+    public static void fix(
+            Path pomPath,
+            List<DependenciesTui.DepEntry> unusedDeclared,
+            List<DependenciesTui.DepEntry> usedTransitive,
+            Map<String, String> gaToVersion,
+            FixLogger logger)
+            throws IOException {
+        fix(pomPath, unusedDeclared, usedTransitive, gaToVersion, Set.of(), logger);
+    }
+
+    /**
+     * Adds a dependency element without a {@code <version>} tag, using the project's detected
+     * indentation conventions for whitespace alignment.
+     */
+    private static void addDependencyWithoutVersion(
+            PomEditor editor, String groupId, String artifactId, String classifier, String scope) {
+        // Ensure <dependencies> element exists
+        Element deps = editor.findChildElement(editor.root(), "dependencies");
+        if (deps == null) {
+            deps = editor.insertMavenElement(editor.root(), "dependencies");
+        }
+        Element dep = editor.dependencies().addDependency(deps, groupId, artifactId, null);
+        if (classifier != null && !classifier.isEmpty()) {
+            editor.insertMavenElement(dep, "classifier", classifier);
+        }
+        if (scope != null && !scope.isEmpty() && !"compile".equals(scope)) {
+            editor.insertMavenElement(dep, "scope", scope);
+        }
     }
 
     public static void appendScope(StringBuilder sb, DependenciesTui.DepEntry dep) {

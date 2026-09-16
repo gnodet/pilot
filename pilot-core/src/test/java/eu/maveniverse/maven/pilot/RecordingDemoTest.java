@@ -926,8 +926,8 @@ class RecordingDemoTest {
         ReactorModel reactorModel = ReactorModel.build(projects);
 
         // Panel factory that produces a simple UpdatesTui for the Updates tool,
-        // and a loading placeholder (null) for all other tools
-        ToolPanel.setRootDir(parentDir);
+        // and a loading placeholder (null) for all other tools.
+        // Note: PilotShell constructor already calls ToolPanel.setRootDir() from projects.get(0).
         PilotShell.ToolPanelFactory factory = (toolId, project, scope, session, sessionProvider, progress) -> {
             if ("updates".equals(toolId) && project != null) {
                 List<PilotProject> scopeList = List.of(project);
@@ -950,24 +950,30 @@ class RecordingDemoTest {
         DemoRecorder recorder = new DemoRecorder(shell::render, "pilot:pilot");
 
         try (var testRunner = TuiTestRunner.runTest(shell::handleEvent, shell::render, new Size(WIDTH, HEIGHT))) {
+            // Inject the TuiRunner so async panel loading works (PilotShell.run() normally
+            // sets this, but in test mode we bypass run() and go straight to TuiTestRunner)
+            var runnerField = PilotShell.class.getDeclaredField("runner");
+            runnerField.setAccessible(true);
+            runnerField.set(shell, testRunner.runner());
+
             dev.tamboui.tui.pilot.Pilot pilot = testRunner.pilot();
 
             pilot.pause();
             recorder.scene(
                     "The pilot:pilot goal opens a unified shell with a module tree on the left and tool tabs across the top. Select a module, then switch tools with Alt+letter shortcuts.");
 
-            // Navigate into the tree and select the core module
-            pilot.press(KeyCode.DOWN);
+            // Navigate in the tree to select myapp-core (first child module)
             pilot.press(KeyCode.DOWN);
             pilot.pause();
             recorder.scene(
                     "The module tree mirrors your Maven reactor hierarchy. Navigate with arrow keys to select any module. Tools that don't apply to a module are automatically filtered out.");
 
-            // Switch to the Updates tool (Alt+U)
-            pilot.press(KeyCode.TAB); // focus content
+            // Switch to the Updates tool with Alt+U, then focus content
+            pilot.press('u', dev.tamboui.tui.event.KeyModifiers.ALT);
+            pilot.pause(java.time.Duration.ofMillis(300)); // let async panel load complete
             pilot.pause();
             recorder.scene(
-                    "Press Tab to move focus to the content area. Each tool tab at the top shows the active tool. Use Alt+D, Alt+U, Alt+C, Alt+A, and other shortcuts to switch tools instantly.");
+                    "Use Alt+D, Alt+U, Alt+C, Alt+A, Alt+G, and other shortcuts to switch tools instantly. Here, Alt+U opens the Updates view for the selected module, showing available dependency upgrades.");
 
             pilot.press('q');
         }

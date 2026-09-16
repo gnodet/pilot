@@ -46,6 +46,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -62,10 +63,12 @@ public class PluginsTui extends ToolPanel {
         final String artifactId;
         String version;
         final List<String> modules = new ArrayList<>();
-        /** Per-module version: module name → declared version (null if inherited/absent). */
+        /** Per-module version: module GA (groupId:artifactId) → declared version (empty string if inherited/absent). */
         final Map<String, String> moduleVersions = new LinkedHashMap<>();
 
-        volatile String newestVersion;
+        // All mutations to mutable fields go through runOnRenderThread and are consumed on the same
+        // render thread, so no volatile/synchronization is needed on any of these fields.
+        String newestVersion;
         VersionComparator.UpdateType updateType;
         LocalDate currentReleaseDate;
         LocalDate newestReleaseDate;
@@ -122,7 +125,7 @@ public class PluginsTui extends ToolPanel {
     final List<PluginEntry> updates = new ArrayList<>();
     private final boolean singleModule;
     private final UpdatesTui.VersionResolver versionResolver;
-    private final ExecutorService httpPool = PilotUtil.newHttpPool();
+    final ExecutorService httpPool = PilotUtil.newHttpPool();
     private final TableState tableState = new TableState();
     private final TableState detailTableState = new TableState();
 
@@ -130,8 +133,10 @@ public class PluginsTui extends ToolPanel {
     private Filter filter = Filter.ALL;
     volatile String statusText = "Loading updates\u2026";
     volatile boolean loading = true;
+    // loadedCount, failedCount, dateFetchesPending, datesLoading are mutated exclusively inside
+    // runOnRenderThread callbacks and read only from the render thread — no volatile needed.
     int loadedCount;
-    volatile int failedCount;
+    int failedCount;
     int dateFetchesPending;
     boolean datesLoading;
     private int lastContentHeight;
@@ -250,18 +255,31 @@ public class PluginsTui extends ToolPanel {
         loading = false;
         applyFilter();
         statusText = buildStatusMessage();
-        // Build GA → all entries map so date results propagate to both declared and
-        // managed entries that share the same GA (both appear in the Updates view).
-        Map<String, List<PluginEntry>> allEntriesByGa = new LinkedHashMap<>();
-        for (PluginEntry e : plugins)
-            allEntriesByGa.computeIfAbsent(e.ga(), k -> new ArrayList<>()).add(e);
-        for (PluginEntry e : managed)
-            allEntriesByGa.computeIfAbsent(e.ga(), k -> new ArrayList<>()).add(e);
-        // Deduplicate HTTP requests: fetch dates once per GA, propagate to all entries.
-        Map<String, PluginEntry> datesByGa = new LinkedHashMap<>();
-        for (PluginEntry e : plugins) datesByGa.put(e.ga(), e);
-        for (PluginEntry e : managed) datesByGa.putIfAbsent(e.ga(), e);
-        fetchReleaseDates(new ArrayList<>(datesByGa.values()), allEntriesByGa);
+        List<PluginEntry> all = new ArrayList<>();
+        all.addAll(plugins);
+        all.addAll(managed);
+        // Group by current GAV so each distinct current version gets its own date fetch,
+        // and entries sharing the same current version share the result.
+        Map<String, List<PluginEntry>> byCurrentGav = new LinkedHashMap<>();
+        for (PluginEntry e : all)
+            byCurrentGav.computeIfAbsent(e.gav(), k -> new ArrayList<>()).add(e);
+        // Group by GA for the newest-version date: all same-GA entries share newestVersion.
+        Map<String, List<PluginEntry>> byGa = new LinkedHashMap<>();
+        for (PluginEntry e : all)
+            byGa.computeIfAbsent(e.ga(), k -> new ArrayList<>()).add(e);
+        // Representatives: one per distinct current GAV (for current date), one per GA (for newest date).
+        List<PluginEntry> currentReps = byCurrentGav.values().stream()
+                .map(l -> l.get(0))
+                .filter(PluginEntry::hasUpdate)
+                .toList();
+        // For the newest-date rep, pick the first entry in the GA group that actually has an update,
+        // so we never skip the fetch when the first-inserted entry (e.g. a managed plugin already at
+        // the newest version) has hasUpdate()==false while other same-GA entries do have an update.
+        List<PluginEntry> newestReps = byGa.values().stream()
+                .map(l -> l.stream().filter(PluginEntry::hasUpdate).findFirst().orElse(null))
+                .filter(Objects::nonNull)
+                .toList();
+        fetchReleaseDates(currentReps, byCurrentGav, newestReps, byGa);
     }
 
     void applyFilter() {
@@ -290,31 +308,30 @@ public class PluginsTui extends ToolPanel {
         }
     }
 
-    private void fetchReleaseDates(List<PluginEntry> entries, Map<String, List<PluginEntry>> allEntriesByGa) {
-        int count = 0;
-        for (PluginEntry e : entries) {
-            if (e.hasUpdate()) count += 2;
-        }
-        dateFetchesPending = count;
+    private void fetchReleaseDates(
+            List<PluginEntry> currentReps,
+            Map<String, List<PluginEntry>> byCurrentGav,
+            List<PluginEntry> newestReps,
+            Map<String, List<PluginEntry>> byGa) {
+        // One HTTP fetch per distinct current GAV + one per GA (newest version).
+        dateFetchesPending = currentReps.size() + newestReps.size();
         if (dateFetchesPending == 0) return;
         datesLoading = true;
 
-        for (PluginEntry entry : entries) {
-            if (entry.hasUpdate()) {
-                fetchEntryDates(entry, allEntriesByGa.getOrDefault(entry.ga(), List.of(entry)));
-            }
+        for (PluginEntry entry : currentReps) {
+            List<PluginEntry> sameCurrentVersion = byCurrentGav.getOrDefault(entry.gav(), List.of(entry));
+            fetchDate(entry.groupId, entry.artifactId, entry.version, date -> {
+                for (PluginEntry e : sameCurrentVersion) e.currentReleaseDate = date;
+                for (PluginEntry e : sameCurrentVersion) computeLibYear(e);
+            });
         }
-    }
-
-    private void fetchEntryDates(PluginEntry entry, List<PluginEntry> allForGa) {
-        fetchDate(entry.groupId, entry.artifactId, entry.version, date -> {
-            for (PluginEntry e : allForGa) e.currentReleaseDate = date;
-            for (PluginEntry e : allForGa) computeLibYear(e);
-        });
-        fetchDate(entry.groupId, entry.artifactId, entry.newestVersion, date -> {
-            for (PluginEntry e : allForGa) e.newestReleaseDate = date;
-            for (PluginEntry e : allForGa) computeLibYear(e);
-        });
+        for (PluginEntry entry : newestReps) {
+            List<PluginEntry> sameGa = byGa.getOrDefault(entry.ga(), List.of(entry));
+            fetchDate(entry.groupId, entry.artifactId, entry.newestVersion, date -> {
+                for (PluginEntry e : sameGa) e.newestReleaseDate = date;
+                for (PluginEntry e : sameGa) computeLibYear(e);
+            });
+        }
     }
 
     private void fetchDate(String groupId, String artifactId, String version, Consumer<LocalDate> onDate) {

@@ -134,7 +134,7 @@ public class UpdatesTui extends ToolPanel {
     private final VersionResolver versionResolver;
     private final TreeImpactResolver treeImpactResolver;
     private final Function<Path, PomEditSession> sessionProvider;
-    private final TableState tableState = new TableState();
+    final TableState tableState = new TableState();
     private final TableState moduleTableState = new TableState();
     private final ExecutorService httpPool = PilotUtil.newHttpPool();
 
@@ -1086,7 +1086,7 @@ public class UpdatesTui extends ToolPanel {
                 .exceptionally(ex -> {
                     runner.runOnRenderThread(() -> {
                         if (gen != treeImpactGeneration.get()) return; // stale, discard
-                        status = "Tree impact failed for " + target.label() + ": " + ex.getMessage();
+                        status = "Tree impact failed for " + target.label() + ": " + ex;
                     });
                     return null;
                 });

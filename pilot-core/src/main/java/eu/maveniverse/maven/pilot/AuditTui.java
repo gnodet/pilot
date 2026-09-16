@@ -1740,11 +1740,15 @@ public class AuditTui extends ToolPanel {
                 Audits all resolved dependencies for license
                 compliance and known security vulnerabilities.
                 Licenses view: shows each dependency's license
-                (from POM metadata). Review for compatibility
-                with your project's licensing requirements.
-                Vulnerabilities view: queries for known CVEs
-                affecting your dependencies. Shows severity,
-                CVE identifier, and affected version range.
+                (from POM metadata). Toggle grouped display with
+                'g' to see dependencies grouped by license type
+                with collapsible license headers. Review for
+                compatibility with your project's licensing.
+                Vulnerabilities view: queries OSV.dev for known
+                vulnerabilities affecting your dependencies. Shows severity,
+                advisory identifier, and affected version range.
+                Data loads asynchronously — wait for the spinner
+                to clear before drawing conclusions.
 
                 ## License Colors
                 default         Permissive license (Apache, MIT, BSD)
@@ -1763,7 +1767,7 @@ public class AuditTui extends ToolPanel {
                 """ + NAV_KEYS + """
                 ← / →           Collapse / expand (Vulns / grouped Licenses)
                 Enter / Space   Toggle expand/collapse on group header
-                Tab             Switch between Licenses / Vulns
+                Tab             Switch between Licenses / Vulnerabilities
                 g               Toggle flat / grouped license display
                 s               Cycle scope filter: all → compile → runtime → test → provided
                 m               Add selected dep (or all in group) to dependencyManagement
@@ -1778,7 +1782,7 @@ public class AuditTui extends ToolPanel {
                 ↑ / ↓           Move selection up / down
                 ← / →           Collapse / expand (Vulns / grouped Licenses)
                 Enter / Space   Toggle expand/collapse on group header
-                Tab             Switch between Licenses / Vulns
+                Tab             Switch between Licenses / Vulnerabilities
                 g               Toggle flat / grouped license display
                 s               Cycle scope filter: all → compile → runtime → test → provided
                 m               Add selected dep (or all in group) to dependencyManagement

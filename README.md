@@ -12,12 +12,12 @@ Pilot is a Maven plugin (and standalone CLI) that replaces hard-to-read CLI outp
 | `pilot:search` | Search Maven Central interactively with async results and version cycling |
 | `pilot:tree` | Browse the resolved dependency tree with expand/collapse, conflict highlighting, scope filtering, and reverse path lookup |
 | `pilot:pom` | View raw and effective POM with syntax highlighting, collapsible XML nodes, and origin tracking |
-| `pilot:dependencies` | Bytecode-level analysis of declared vs used dependencies; supports `tui`, `report`, `check`, and `fix` actions |
-| `pilot:updates` | Check for dependency updates with patch/minor/major classification; supports `tui`, `report`, `check`, and `fix` actions |
+| `pilot:dependencies` | Bytecode-level analysis of declared vs used dependencies; supports `report`, `check`, and `fix` actions |
+| `pilot:updates` | Check for dependency updates with patch/minor/major classification; supports `report`, `check`, and `fix` actions |
 | `pilot:conflicts` | Detect version conflicts across the dependency tree and pin versions via `dependencyManagement` |
 | `pilot:audit` | License overview and CVE lookup (via OSV.dev); supports `tui`, `report`, and `check` actions |
 | `pilot:align` | Detect and align dependency conventions (version style, property naming) across POMs |
-| `pilot:plugins` | Browse declared and managed plugins, check for version updates with libyear scoring |
+| `pilot:plugins` | Check for plugin version updates in the reactor; supports `report` and `check` actions (TUI browsing available via `pilot:pilot`, `Alt+G`) |
 | `pilot:analyze-dependencies` | *(deprecated)* Use `pilot:dependencies -Dpilot.action=check` instead |
 
 ## Quick Start
@@ -59,8 +59,12 @@ mvn pilot:audit
 # Align dependency conventions
 mvn pilot:align
 
-# Browse declared and managed plugins
+# Check plugin updates (headless)
 mvn pilot:plugins
+mvn pilot:plugins -Dpilot.action=check     # fail build if updates found
+
+# Browse declared and managed plugins interactively (via pilot:pilot, Alt+G)
+mvn pilot:pilot
 
 # Non-interactive modes (CI-friendly) — all goals support -Dpilot.action=report|check|fix
 mvn compile pilot:dependencies -Dpilot.action=report          # report unused/transitive deps
@@ -131,7 +135,9 @@ Syntax-highlighted XML viewer with two switchable modes: **Raw POM** shows your 
 
 ### Dependency Analysis (`pilot:dependencies`)
 
-Two views: **Declared** dependencies and **Transitive** dependencies. Uses ASM bytecode analysis to determine which dependencies are actually referenced in code, with member-level detail (method calls, field accesses). Detects SPI/ServiceLoader usage -- dependencies providing `META-INF/services` are recognized even without direct class references.
+Up to five views depending on what was built and how: **Tree** (full resolved dependency tree, same as `pilot:tree`), **Declared** (dependencies in the POM), **Transitive** (all transitive dependencies), **Managed** (entries in `<dependencyManagement>`), and **DM Tree** (transitive tree of managed dependencies). Use digit keys `1`–`5` to switch views (available views adapt based on reactor context).
+
+Uses ASM bytecode analysis to determine which dependencies are actually referenced in code, with member-level detail (method calls, field accesses). Detects SPI/ServiceLoader usage -- dependencies providing `META-INF/services` are recognized even without direct class references.
 
 Each dependency is marked with a usage indicator: `✓` for used, `✗` for unused. Tab headers show counts (e.g., `Declared: 4 (2 unused)`). A details pane shows per-class member references and SPI service interfaces. Promote transitive dependencies to declared, remove unused ones, or change scope -- all with single keypresses that edit your POM via DomTrip.
 
@@ -139,7 +145,7 @@ Run `mvn compile` before this goal for full bytecode analysis. A warning banner 
 
 [![pilot:dependencies](docs/images/dependencies.svg)](https://maveniverse.github.io/pilot/player/dependencies.html)
 
-**Keys:** `Tab` -- switch Declared/Transitive, `x` -- remove declared, `a` -- add transitive, `s` -- change scope, `d` -- show diff, `h` -- help
+**Keys:** `1`–`5` -- switch views (Tree/Declared/Transitive/Managed/DM Tree), `x` -- remove declared/managed, `a` -- add transitive, `c` -- change scope, `s/S` -- sort, `d` -- show diff, `h` -- help
 
 ### Dependency Updates (`pilot:updates`)
 
@@ -147,25 +153,25 @@ Scans all dependencies for newer versions. Updates are color-coded: green (patch
 
 [![pilot:updates](docs/images/updates.svg)](https://maveniverse.github.io/pilot/player/updates.html)
 
-**Keys:** `Space` -- toggle, `a` -- select all, `n` -- deselect all, `Enter` -- apply, `1-4` -- filter by type
+**Keys:** `Space`/`Enter` -- apply update immediately, `f`/`F` -- cycle filter (all/patch/minor/major), `t` -- tree impact preview, `i` -- toggle detail pane, `d` -- diff, `Tab` -- switch Dependencies/Modules view (reactor builds)
 
 ### Conflict Resolution (`pilot:conflicts`)
 
-Groups dependencies by `groupId:artifactId` and shows where different versions are requested. Toggle between actual conflicts only or all dependency groups (`a`). Expand any conflict to see the full dependency paths. Pin a version to `dependencyManagement` with one keypress.
+Groups dependencies by `groupId:artifactId` and shows where different versions are requested. Toggle between actual conflicts only or all dependency groups (`t`). Expand any conflict to see the full dependency paths. Pin a version to `dependencyManagement` with one keypress.
 
 [![pilot:conflicts](docs/images/conflicts.svg)](https://maveniverse.github.io/pilot/player/conflicts.html)
 
-**Keys:** `Enter/Space` -- toggle details, `p` -- pin version, `a` -- toggle show all, `jk` -- navigate
+**Keys:** `Enter/Space` -- toggle details, `p` -- pin version, `t` -- toggle show all/conflicts only, `s/S` -- sort, `d` -- diff, `jk` -- navigate
 
 ### License & Security Audit (`pilot:audit`)
 
-Three views: **Licenses** shows all transitive dependencies with their licenses (color-coded by permissiveness), **By License** groups dependencies under each license type, and **Vulnerabilities** queries OSV.dev for known CVEs with severity-coded rows (CRITICAL/HIGH/MEDIUM/LOW). Data loads asynchronously. Filter by scope (`s`) to focus on compile, runtime, or test dependencies. In reactor builds, tracks which modules use each dependency.
+Two views: **Licenses** shows all transitive dependencies with their licenses (color-coded by permissiveness; toggle grouped-by-license mode with `g`), and **Vulnerabilities** queries OSV.dev for known CVEs with severity-coded rows (CRITICAL/HIGH/MEDIUM/LOW). Data loads asynchronously. Filter by scope (`s`) to focus on compile, runtime, test, or provided dependencies. In reactor builds, tracks which modules use each dependency.
 
 [![pilot:audit](docs/images/audit.svg)](https://maveniverse.github.io/pilot/player/audit.html)
 
 [![pilot:audit vulnerabilities](docs/images/audit-vulns.svg)](https://maveniverse.github.io/pilot/player/audit.html)
 
-**Keys:** `Tab` -- switch view, `s` -- cycle scope filter, `m` -- manage dependency, `d` -- show diff, `h` -- help
+**Keys:** `Tab` -- switch Licenses/Vulnerabilities, `g` -- toggle grouped-by-license, `s` -- cycle scope filter, `m` -- manage dependency, `d` -- show diff, `h` -- help
 
 #### Non-Interactive Audit Report (`-Dpilot.action=report`)
 
@@ -212,12 +218,26 @@ Detects the project's current dependency conventions (inline vs managed versions
 
 **Keys:** `jk` -- navigate options, `<>/Enter` -- cycle values, `p` -- preview diff, `w` -- apply, `h` -- help
 
+### Plugin Browser (`pilot:plugins`)
+
+Browse all declared and managed plugins in the reactor. Three views: **Plugins** (declared plugins per module), **Managed** (entries in `<pluginManagement>`), **Updates** (plugins with newer versions available, color-coded by update type).
+
+The plugin browser is available in two modes:
+- **Interactive TUI** — via `pilot:pilot` (`Alt+G`), integrated with the full multi-module shell
+- **Headless (`pilot:plugins`)** — standalone goal for CI; aggregates all reactor modules and reports plugin update availability
+
+```bash
+mvn pilot:plugins                         # print plugin update report, exit 0
+mvn pilot:plugins -Dpilot.action=check    # fail build if any plugin updates are found
+```
+
+**TUI Keys:** `1`–`3` -- switch Plugins/Managed/Updates view, `f`/`F` -- cycle update filter (Updates view), `s`/`S` -- sort, `/` -- search, `n`/`N` -- next/prev match
+
 ### Dependencies Report, Check & Fix
 
 The `pilot:dependencies` goal supports non-interactive modes via `-Dpilot.action`:
 
-- **`tui`** (default) — interactive TUI dashboard
-- **`report`** — reports unused declared and used transitive dependencies without failing
+- **`report`** (default) — reports unused declared and used transitive dependencies without failing
 - **`check`** — reports issues and fails the build
 - **`fix`** — removes unused declared and adds used transitive dependencies to the POM
 

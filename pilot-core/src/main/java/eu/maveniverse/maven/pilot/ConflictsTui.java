@@ -399,6 +399,7 @@ public class ConflictsTui extends ToolPanel {
 
                 ## Conflict Actions
                 ↑ / ↓           Move selection up / down
+                s / S           Sort by column / reverse direction
                 t               Toggle between conflicts only / all groups
                 p               Pin resolved version in dependencyManagement
                 d               Preview POM changes as a unified diff
@@ -561,6 +562,7 @@ public class ConflictsTui extends ToolPanel {
         List<HelpOverlay.Section> parsed = HelpOverlay.parse("""
                 ## Keys
                 """ + NAV_KEYS + """
+                s / S           Sort by column / reverse direction
                 t               Toggle between conflicts only / all groups
                 p               Pin resolved version in dependencyManagement
                 d               Preview POM changes as a unified diff

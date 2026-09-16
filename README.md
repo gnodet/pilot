@@ -12,10 +12,10 @@ Pilot is a Maven plugin (and standalone CLI) that replaces hard-to-read CLI outp
 | `pilot:search` | Search Maven Central interactively with async results and version cycling |
 | `pilot:tree` | Browse the resolved dependency tree with expand/collapse, conflict highlighting, scope filtering, and reverse path lookup |
 | `pilot:pom` | View raw and effective POM with syntax highlighting, collapsible XML nodes, and origin tracking |
-| `pilot:dependencies` | Bytecode-level analysis of declared vs used dependencies; supports `report`, `check`, and `fix` actions |
-| `pilot:updates` | Check for dependency updates with patch/minor/major classification; supports `report`, `check`, and `fix` actions |
-| `pilot:conflicts` | Detect version conflicts across the dependency tree and pin versions via `dependencyManagement` |
-| `pilot:audit` | License overview and CVE lookup (via OSV.dev); supports `tui`, `report`, and `check` actions |
+| `pilot:dependencies` | Bytecode-level analysis of declared vs used dependencies; supports `report`, `check`, and `fix` actions (interactive TUI via `pilot:pilot`) |
+| `pilot:updates` | Check for dependency updates with patch/minor/major classification; supports `report`, `check`, and `fix` actions (interactive TUI via `pilot:pilot`) |
+| `pilot:conflicts` | Detect version conflicts across the dependency tree and pin versions via `dependencyManagement`; supports `report` and `check` actions (interactive TUI via `pilot:pilot`) |
+| `pilot:audit` | License overview and CVE lookup (via OSV.dev); supports `report` and `check` actions (interactive TUI via `pilot:pilot`) |
 | `pilot:align` | Detect and align dependency conventions (version style, property naming) across POMs |
 | `pilot:plugins` | Check for plugin version updates in the reactor; supports `report` and `check` actions (TUI browsing available via `pilot:pilot`, `Alt+G`) |
 | `pilot:analyze-dependencies` | *(deprecated)* Use `pilot:dependencies -Dpilot.action=check` instead |
@@ -109,6 +109,10 @@ Some tools operate reactor-wide (updates, conflicts, audit), analyzing all modul
 
 The main entry point. Opens a unified IDE-like shell with a persistent module tree on the left and tool tabs across the top. Select a module from the tree, then switch between tools using tabs or `Alt+letter` shortcuts. In single-module projects the tree is hidden and tools are shown directly. A slide-up help panel (`h`) shows contextual keyboard shortcuts for the active tool.
 
+[![pilot:pilot](docs/images/pilot.svg)](https://maveniverse.github.io/pilot/player/pilot.html)
+
+**Keys:** `Alt+D/U/C/A/G/P/L/S` -- switch tool, `Tab` -- focus tree/content, `←/→` -- select module, `h` -- help, `q` -- quit
+
 ### Search (`pilot:search`)
 
 Type to search Maven Central. Results load asynchronously with pagination. Use `Left`/`Right` arrows to cycle through available versions. Bottom bar shows POM metadata (name, license, organization, date).
@@ -143,108 +147,16 @@ Each dependency is marked with a usage indicator: `✓` for used, `✗` for unus
 
 Run `mvn compile` before this goal for full bytecode analysis. A warning banner appears when classes are not compiled.
 
-[![pilot:dependencies](docs/images/dependencies.svg)](https://maveniverse.github.io/pilot/player/dependencies.html)
-
-**Keys:** `1`–`5` -- switch views (Tree/Declared/Transitive/Managed/DM Tree), `x` -- remove declared/managed, `a` -- add transitive, `c` -- change scope, `s/S` -- sort, `d` -- show diff, `h` -- help
-
-### Dependency Updates (`pilot:updates`)
-
-Scans all dependencies for newer versions. Updates are color-coded: green (patch), yellow (minor), red (major). Select individually or batch-select, then apply -- Pilot edits your POM directly using lossless XML editing that preserves formatting and comments. In reactor builds, shows a reactor-wide view with per-module breakdown.
-
-[![pilot:updates](docs/images/updates.svg)](https://maveniverse.github.io/pilot/player/updates.html)
-
-**Keys:** `Space`/`Enter` -- apply update immediately, `f`/`F` -- cycle filter (all/patch/minor/major), `t` -- tree impact preview, `i` -- toggle detail pane, `d` -- diff, `Tab` -- switch Dependencies/Modules view (reactor builds)
-
-### Conflict Resolution (`pilot:conflicts`)
-
-Groups dependencies by `groupId:artifactId` and shows where different versions are requested. Toggle between actual conflicts only or all dependency groups (`t`). Expand any conflict to see the full dependency paths. Pin a version to `dependencyManagement` with one keypress.
-
-[![pilot:conflicts](docs/images/conflicts.svg)](https://maveniverse.github.io/pilot/player/conflicts.html)
-
-**Keys:** `Enter/Space` -- toggle details, `p` -- pin version, `t` -- toggle show all/conflicts only, `s/S` -- sort, `d` -- diff, `jk` -- navigate
-
-### License & Security Audit (`pilot:audit`)
-
-Two views: **Licenses** shows all transitive dependencies with their licenses (color-coded by permissiveness; toggle grouped-by-license mode with `g`), and **Vulnerabilities** queries OSV.dev for known CVEs with severity-coded rows (CRITICAL/HIGH/MEDIUM/LOW). Data loads asynchronously. Filter by scope (`s`) to focus on compile, runtime, test, or provided dependencies. In reactor builds, tracks which modules use each dependency.
-
-[![pilot:audit](docs/images/audit.svg)](https://maveniverse.github.io/pilot/player/audit.html)
-
-[![pilot:audit vulnerabilities](docs/images/audit-vulns.svg)](https://maveniverse.github.io/pilot/player/audit.html)
-
-**Keys:** `Tab` -- switch Licenses/Vulnerabilities, `g` -- toggle grouped-by-license, `s` -- cycle scope filter, `m` -- manage dependency, `d` -- show diff, `h` -- help
-
-#### Non-Interactive Audit Report (`-Dpilot.action=report`)
-
-Prints a structured text report covering vulnerabilities (sorted by severity) and licenses (grouped by type). Suitable for CI logs.
+The interactive TUI is available via `pilot:pilot` (select a module, then the **Deps** tab). For CI and build integration, `pilot:dependencies` supports headless modes:
 
 ```bash
-mvn pilot:audit -Dpilot.action=report
-```
+# Report unused declared and used transitive dependencies (exits 0)
+mvn compile pilot:dependencies -Dpilot.action=report
 
-#### Audit CI Gate (`-Dpilot.action=check`)
-
-Fails the build when vulnerabilities at or above a severity threshold are found. Defaults to `HIGH`.
-
-```bash
-# Fail on HIGH or CRITICAL CVEs (default)
-mvn pilot:audit -Dpilot.action=check
-
-# Fail only on CRITICAL CVEs
-mvn pilot:audit -Dpilot.action=check -Dpilot.audit.severity=CRITICAL
-```
-
-### Updates Report, Check & Fix
-
-The `pilot:updates` goal supports non-interactive modes:
-
-```bash
-# Print update report with libyear aging
-mvn pilot:updates -Dpilot.action=report
-
-# Apply all available updates to POM files
-mvn pilot:updates -Dpilot.action=fix
-
-# Fail the build if total libyears exceed threshold
-mvn pilot:updates -Dpilot.action=check -Dpilot.updates.libyears=5.0
-```
-
-The report lists all dependencies with available updates (classified as patch/minor/major), property groups, and a total libyear score measuring how far behind the project is from latest releases. The `fix` action applies all available updates directly to POM files — property-managed dependencies update the property, direct dependencies update the version inline.
-
-### Convention Alignment (`pilot:align`)
-
-Detects the project's current dependency conventions (inline vs managed versions, literal vs property references, property naming patterns) and lets you choose a target convention. Preview the diff before applying. In reactor builds, understands the parent POM hierarchy -- managed dependencies are written to the correct parent POM while child modules get version-less references. Selecting a parent module automatically applies alignment across all child modules in one go.
-
-![pilot:align](docs/images/align.svg)
-
-**Keys:** `jk` -- navigate options, `<>/Enter` -- cycle values, `p` -- preview diff, `w` -- apply, `h` -- help
-
-### Plugin Browser (`pilot:plugins`)
-
-Browse all declared and managed plugins in the reactor. Three views: **Plugins** (declared plugins per module), **Managed** (entries in `<pluginManagement>`), **Updates** (plugins with newer versions available, color-coded by update type).
-
-The plugin browser is available in two modes:
-- **Interactive TUI** — via `pilot:pilot` (`Alt+G`), integrated with the full multi-module shell
-- **Headless (`pilot:plugins`)** — standalone goal for CI; aggregates all reactor modules and reports plugin update availability
-
-```bash
-mvn pilot:plugins                         # print plugin update report, exit 0
-mvn pilot:plugins -Dpilot.action=check    # fail build if any plugin updates are found
-```
-
-**TUI Keys:** `1`–`3` -- switch Plugins/Managed/Updates view, `f`/`F` -- cycle update filter (Updates view), `s`/`S` -- sort, `/` -- search, `n`/`N` -- next/prev match
-
-### Dependencies Report, Check & Fix
-
-The `pilot:dependencies` goal supports non-interactive modes via `-Dpilot.action`:
-
-- **`report`** (default) — reports unused declared and used transitive dependencies without failing
-- **`check`** — reports issues and fails the build
-- **`fix`** — removes unused declared and adds used transitive dependencies to the POM
-
-Requires prior compilation (`mvn compile`) for bytecode analysis.
-
-```bash
+# Fail the build if dependency issues are found
 mvn compile pilot:dependencies -Dpilot.action=check
+
+# Auto-fix the POM: remove unused declared, add used transitive
 mvn compile pilot:dependencies -Dpilot.action=fix
 ```
 
@@ -266,6 +178,99 @@ Supports allowlists (`runtimeArtifacts`, `annotationOnlyArtifacts`, `reflectionL
 ```
 
 > **Note:** `pilot:analyze-dependencies` is deprecated. Use `pilot:dependencies -Dpilot.action=check` instead.
+
+[![pilot:dependencies](docs/images/dependencies.svg)](https://maveniverse.github.io/pilot/player/dependencies.html)
+
+**Keys (interactive):** `1`–`5` -- switch views (Tree/Declared/Transitive/Managed/DM Tree), `x` -- remove declared/managed, `a` -- add transitive, `c` -- change scope, `s/S` -- sort, `d` -- show diff, `h` -- help
+
+### Dependency Updates (`pilot:updates`)
+
+Scans all dependencies for newer versions. Updates are color-coded: green (patch), yellow (minor), red (major). Select individually or batch-select, then apply -- Pilot edits your POM directly using lossless XML editing that preserves formatting and comments. In reactor builds, shows a reactor-wide view with per-module breakdown.
+
+The interactive TUI is available via `pilot:pilot` (select a module, then the **Updates** tab). For CI and build integration, `pilot:updates` supports headless modes:
+
+```bash
+# Print update report with libyear aging (exits 0)
+mvn pilot:updates -Dpilot.action=report
+
+# Apply all available updates to POM files
+mvn pilot:updates -Dpilot.action=fix
+
+# Fail the build if total libyears exceed threshold
+mvn pilot:updates -Dpilot.action=check -Dpilot.updates.libyears=5.0
+```
+
+The report lists all dependencies with available updates (classified as patch/minor/major), property groups, and a total libyear score measuring how far behind the project is from latest releases. The `fix` action applies all available updates directly to POM files — property-managed dependencies update the property, direct dependencies update the version inline.
+
+[![pilot:updates](docs/images/updates.svg)](https://maveniverse.github.io/pilot/player/updates.html)
+
+**Keys (interactive):** `Space`/`Enter` -- apply update immediately, `f`/`F` -- cycle filter (all/patch/minor/major), `t` -- tree impact preview, `i` -- toggle detail pane, `d` -- diff, `Tab` -- switch Dependencies/Modules view (reactor builds)
+
+### Conflict Resolution (`pilot:conflicts`)
+
+Groups dependencies by `groupId:artifactId` and shows where different versions are requested. Toggle between actual conflicts only or all dependency groups (`t`). Expand any conflict to see the full dependency paths. Pin a version to `dependencyManagement` with one keypress.
+
+The interactive TUI is available via `pilot:pilot` (select a module, then the **Conflicts** tab). For CI use, `pilot:conflicts` supports headless modes:
+
+```bash
+# Report all version conflicts (exits 0)
+mvn pilot:conflicts -Dpilot.action=report
+
+# Fail the build if any version conflicts are found
+mvn pilot:conflicts -Dpilot.action=check
+```
+
+[![pilot:conflicts](docs/images/conflicts.svg)](https://maveniverse.github.io/pilot/player/conflicts.html)
+
+**Keys (interactive):** `Enter/Space` -- toggle details, `p` -- pin version, `t` -- toggle show all/conflicts only, `s/S` -- sort, `d` -- diff, `jk` -- navigate
+
+### License & Security Audit (`pilot:audit`)
+
+Two views: **Licenses** shows all transitive dependencies with their licenses (color-coded by permissiveness; toggle grouped-by-license mode with `g`), and **Vulnerabilities** queries OSV.dev for known CVEs with severity-coded rows (CRITICAL/HIGH/MEDIUM/LOW). Data loads asynchronously. Filter by scope (`s`) to focus on compile, runtime, test, or provided dependencies. In reactor builds, tracks which modules use each dependency.
+
+The interactive TUI is available via `pilot:pilot` (select a module, then the **Audit** tab). For CI and build integration, `pilot:audit` supports headless modes:
+
+```bash
+# Print a structured report: vulnerabilities by severity, licenses by type (exits 0)
+mvn pilot:audit -Dpilot.action=report
+
+# Fail the build on HIGH or CRITICAL vulnerabilities (default threshold)
+mvn pilot:audit -Dpilot.action=check
+
+# Fail only on CRITICAL vulnerabilities
+mvn pilot:audit -Dpilot.action=check -Dpilot.audit.severity=CRITICAL
+```
+
+[![pilot:audit](docs/images/audit.svg)](https://maveniverse.github.io/pilot/player/audit.html)
+
+[![pilot:audit vulnerabilities](docs/images/audit-vulns.svg)](https://maveniverse.github.io/pilot/player/audit.html)
+
+**Keys (interactive):** `Tab` -- switch Licenses/Vulnerabilities, `g` -- toggle grouped-by-license, `s` -- cycle scope filter, `m` -- manage dependency, `d` -- show diff, `h` -- help
+
+### Convention Alignment (`pilot:align`)
+
+Detects the project's current dependency conventions (inline vs managed versions, literal vs property references, property naming patterns) and lets you choose a target convention. Preview the diff before applying. In reactor builds, understands the parent POM hierarchy -- managed dependencies are written to the correct parent POM while child modules get version-less references. Selecting a parent module automatically applies alignment across all child modules in one go.
+
+The interactive TUI is available via `pilot:pilot` (select a module, then the **Align** tab). For headless use, `pilot:align` supports `report`, `check`, and `fix` actions.
+
+![pilot:align](docs/images/align.svg)
+
+**Keys (interactive):** `jk` -- navigate options, `<>/Enter` -- cycle values, `p` -- preview diff, `w` -- apply, `h` -- help
+
+### Plugin Browser (`pilot:plugins`)
+
+Browse all declared and managed plugins in the reactor. Three views: **Plugins** (declared plugins per module), **Managed** (entries in `<pluginManagement>`), **Updates** (plugins with newer versions available, color-coded by update type).
+
+The plugin browser is available in two modes:
+- **Interactive TUI** — via `pilot:pilot` (`Alt+G`), integrated with the full multi-module shell
+- **Headless (`pilot:plugins`)** — standalone goal for CI; aggregates all reactor modules and reports plugin update availability
+
+```bash
+mvn pilot:plugins                         # print plugin update report, exit 0
+mvn pilot:plugins -Dpilot.action=check    # fail build if any plugin updates are found
+```
+
+**TUI Keys:** `1`–`3` -- switch Plugins/Managed/Updates view, `f`/`F` -- cycle update filter (Updates view), `s`/`S` -- sort, `/` -- search, `n`/`N` -- next/prev match
 
 ## How POM Editing Works
 

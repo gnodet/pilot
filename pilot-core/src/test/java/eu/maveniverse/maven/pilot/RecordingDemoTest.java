@@ -856,6 +856,125 @@ class RecordingDemoTest {
         writeRecording(recorder, "audit");
     }
 
+    // ── Pilot Shell (pilot:pilot) ───────────────────────────────────────
+
+    @Test
+    void pilotShellDemo(@TempDir Path tempDir) throws Exception {
+        // Build a synthetic multi-module reactor: parent + two child modules
+        Path parentDir = tempDir.resolve("myapp");
+        Path coreDir = parentDir.resolve("myapp-core");
+        Path webDir = parentDir.resolve("myapp-web");
+        Files.createDirectories(coreDir);
+        Files.createDirectories(webDir);
+        Files.writeString(parentDir.resolve("pom.xml"), "<project/>");
+        Files.writeString(coreDir.resolve("pom.xml"), "<project/>");
+        Files.writeString(webDir.resolve("pom.xml"), "<project/>");
+
+        List<PilotProject.Dep> coreDeps = List.of(
+                new PilotProject.Dep("org.slf4j", "slf4j-api", "2.0.9", "compile", "jar"),
+                new PilotProject.Dep("com.google.guava", "guava", "33.0.0-jre", "compile", "jar"),
+                new PilotProject.Dep("org.junit.jupiter", "junit-jupiter", "5.10.1", "test", "jar"));
+        List<PilotProject.Dep> webDeps = List.of(
+                new PilotProject.Dep("org.slf4j", "slf4j-api", "2.0.9", "compile", "jar"),
+                new PilotProject.Dep("commons-io", "commons-io", "2.15.1", "compile", "jar"),
+                new PilotProject.Dep("org.junit.jupiter", "junit-jupiter", "5.10.1", "test", "jar"));
+
+        PilotProject parent = new PilotProject(
+                "com.example",
+                "myapp",
+                "1.0.0",
+                "pom",
+                parentDir,
+                parentDir.resolve("pom.xml"),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                new Properties(),
+                null,
+                null);
+        PilotProject core = new PilotProject(
+                "com.example",
+                "myapp-core",
+                "1.0.0",
+                "jar",
+                coreDir,
+                coreDir.resolve("pom.xml"),
+                coreDeps,
+                List.of(),
+                coreDeps,
+                List.of(),
+                new Properties(),
+                null,
+                null);
+        PilotProject web = new PilotProject(
+                "com.example",
+                "myapp-web",
+                "1.0.0",
+                "jar",
+                webDir,
+                webDir.resolve("pom.xml"),
+                webDeps,
+                List.of(),
+                webDeps,
+                List.of(),
+                new Properties(),
+                null,
+                null);
+
+        List<PilotProject> projects = List.of(parent, core, web);
+        ReactorModel reactorModel = ReactorModel.build(projects);
+
+        // Panel factory that produces a simple UpdatesTui for the Updates tool,
+        // and a loading placeholder (null) for all other tools
+        ToolPanel.setRootDir(parentDir);
+        PilotShell.ToolPanelFactory factory = (toolId, project, scope, session, sessionProvider, progress) -> {
+            if ("updates".equals(toolId) && project != null) {
+                List<PilotProject> scopeList = List.of(project);
+                ReactorCollector.CollectionResult result = ReactorCollector.collect(scopeList);
+                ReactorModel model = ReactorModel.build(scopeList);
+                for (var ad : result.allDependencies) {
+                    if ("junit-jupiter".equals(ad.artifactId)) {
+                        ad.newestVersion = "5.11.4";
+                        ad.updateType = VersionComparator.UpdateType.MINOR;
+                    }
+                }
+                UpdatesTui tui = new UpdatesTui(result, model, project.ga() + ":1.0.0", (g, a) -> List.of());
+                tui.buildDisplayRows();
+                return tui;
+            }
+            return null;
+        };
+
+        PilotShell shell = new PilotShell(reactorModel, projects, factory);
+        DemoRecorder recorder = new DemoRecorder(shell::render, "pilot:pilot");
+
+        try (var testRunner = TuiTestRunner.runTest(shell::handleEvent, shell::render, new Size(WIDTH, HEIGHT))) {
+            dev.tamboui.tui.pilot.Pilot pilot = testRunner.pilot();
+
+            pilot.pause();
+            recorder.scene(
+                    "The pilot:pilot goal opens a unified shell with a module tree on the left and tool tabs across the top. Select a module, then switch tools with Alt+letter shortcuts.");
+
+            // Navigate into the tree and select the core module
+            pilot.press(KeyCode.DOWN);
+            pilot.press(KeyCode.DOWN);
+            pilot.pause();
+            recorder.scene(
+                    "The module tree mirrors your Maven reactor hierarchy. Navigate with arrow keys to select any module. Tools that don't apply to a module are automatically filtered out.");
+
+            // Switch to the Updates tool (Alt+U)
+            pilot.press(KeyCode.TAB); // focus content
+            pilot.pause();
+            recorder.scene(
+                    "Press Tab to move focus to the content area. Each tool tab at the top shows the active tool. Use Alt+D, Alt+U, Alt+C, Alt+A, and other shortcuts to switch tools instantly.");
+
+            pilot.press('q');
+        }
+
+        writeRecording(recorder, "pilot");
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────
 
     private void writeRecording(DemoRecorder recorder, String name) throws IOException {

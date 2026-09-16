@@ -28,6 +28,7 @@ import dev.tamboui.text.Line;
 import dev.tamboui.text.Span;
 import dev.tamboui.tui.TuiRunner;
 import dev.tamboui.tui.event.Event;
+import dev.tamboui.tui.event.KeyCode;
 import dev.tamboui.tui.event.KeyEvent;
 import dev.tamboui.tui.event.MouseEvent;
 import dev.tamboui.tui.event.TickEvent;
@@ -544,6 +545,19 @@ public class PluginsTui extends ToolPanel {
         if (!(event instanceof KeyEvent key)) {
             return false;
         }
+        // Help overlay consumes all keys
+        if (helpOverlay.isActive()) {
+            if (helpOverlay.handleKey(key)) return true;
+            if (key.isCharIgnoreCase('q') || key.isCtrlC()) {
+                runner.quit();
+                return true;
+            }
+            return false;
+        }
+        if (key.isCtrlC()) {
+            runner.quit();
+            return true;
+        }
         // digit keys switch views in standalone
         String ks = key.string();
         if (ks.length() == 1 && ks.charAt(0) >= '1' && ks.charAt(0) <= '9') {
@@ -553,7 +567,16 @@ public class PluginsTui extends ToolPanel {
                 return true;
             }
         }
-        return handleSimpleStandaloneEvent(event, runner);
+        if (handleKeyEvent(key)) return true;
+        if (key.isCharIgnoreCase('q') || key.isKey(KeyCode.ESCAPE)) {
+            runner.quit();
+            return true;
+        }
+        if (key.isCharIgnoreCase('h')) {
+            helpOverlay.open(buildHelpStandalone());
+            return true;
+        }
+        return false;
     }
 
     // -- ToolPanel methods --
@@ -623,26 +646,41 @@ public class PluginsTui extends ToolPanel {
                         "Plugin Browser",
                         List.of(
                                 new HelpOverlay.Entry("", "Browse Maven plugins declared and managed in the reactor."),
-                                new HelpOverlay.Entry("", "Updates tab shows plugins with newer versions available."))),
+                                new HelpOverlay.Entry("", "Plugins view: all plugins declared in build sections,"),
+                                new HelpOverlay.Entry("", "showing version and which modules use them."),
+                                new HelpOverlay.Entry("", "Managed view: plugins in <pluginManagement>, showing"),
+                                new HelpOverlay.Entry("", "the managed version and module coverage."),
+                                new HelpOverlay.Entry("", "Updates view: plugins with newer versions available,"),
+                                new HelpOverlay.Entry("", "color-coded by update type (patch/minor/major)."),
+                                new HelpOverlay.Entry("", "Use 1-3 to switch between views."))),
                 new HelpOverlay.Section(
                         "Colors",
                         List.of(
-                                new HelpOverlay.Entry("dim", "Patch update"),
-                                new HelpOverlay.Entry("white", "Minor update"),
-                                new HelpOverlay.Entry("yellow", "Major update"))),
+                                new HelpOverlay.Entry("dim", "Patch update — bug fixes, safe to apply"),
+                                new HelpOverlay.Entry("white", "Minor update — new features, usually compatible"),
+                                new HelpOverlay.Entry("yellow", "Major update — breaking changes possible"))),
                 new HelpOverlay.Section(
                         "Actions",
                         List.of(
-                                new HelpOverlay.Entry("\u2191 / \u2193", "Move selection up / down"),
+                                new HelpOverlay.Entry("↑ / ↓", "Move selection up / down"),
                                 new HelpOverlay.Entry("PgUp / PgDn", "Move selection up / down by one page"),
                                 new HelpOverlay.Entry("Home / End", "Jump to first / last row"),
                                 new HelpOverlay.Entry("1-3", "Switch Plugins / Managed / Updates view"),
                                 new HelpOverlay.Entry(
-                                        "f / F",
-                                        "Cycle filter: all \u2192 patch \u2192 minor \u2192 major (Updates tab)"),
+                                        "f / F", "Cycle filter: all → patch → minor → major (Updates view)"),
                                 new HelpOverlay.Entry("s / S", "Sort by column / reverse direction"),
                                 new HelpOverlay.Entry("/", "Search / filter"),
                                 new HelpOverlay.Entry("n / N", "Next / previous search match"))));
+    }
+
+    private List<HelpOverlay.Section> buildHelpStandalone() {
+        List<HelpOverlay.Section> sections = new ArrayList<>(helpSections());
+        sections.addAll(HelpOverlay.parse("""
+                ## General
+                h               Toggle this help screen
+                q / Esc         Quit
+                """));
+        return sections;
     }
 
     @Override

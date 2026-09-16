@@ -269,10 +269,19 @@ public class TreeTui extends ToolPanel {
     public List<HelpOverlay.Section> helpSections() {
         return HelpOverlay.parse("""
                 ## Dependency Tree
-                Shows the resolved dependency tree.
+                Shows the resolved dependency tree for the selected
+                scope. Conflicts are highlighted with ⚠ markers
+                showing the resolved version and original request.
+
+                ## Navigation
                 ↑ / ↓           Move selection up / down
+                PgUp / PgDn     Move up / down by one page
+                Home / End      Jump to first / last row
                 ← / →           Collapse / expand tree node
-                E / W           Expand all / collapse all
+
+                ## Actions
+                E               Expand all nodes (uppercase E)
+                W               Collapse all nodes (uppercase W)
                 /               Search by groupId or artifactId
                 c               Jump to next conflict
                 r               Reverse path (why was this pulled in?)

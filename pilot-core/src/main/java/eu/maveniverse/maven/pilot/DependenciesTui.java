@@ -760,15 +760,22 @@ public class DependenciesTui extends ToolPanel {
                 ## Dependency Analysis
                 Uses bytecode analysis to compare what is declared
                 in the POM against what is actually used in code.
-                Declared view: dependencies in the POM that are not
-                referenced in compiled bytecode. These may be safe
-                to remove (but check for runtime/reflection use).
-                Transitive view: classes used in your code that come
-                from transitive dependencies. These should be declared
-                explicitly to avoid breakage when transitives change.
+                Requires prior compilation (mvn compile); a warning
+                banner appears when no bytecode is available.
+                Tree view: full resolved dependency tree (same as
+                pilot:tree). DM Tree: transitive tree of managed
+                dependencies.
+                Declared view: all declared POM dependencies, marked
+                ✓ (used in bytecode), ✗ (unused), or ? (undetermined). Safe to
+                remove unused ones — but check runtime/reflection use.
+                Transitive view: all transitive dependencies; those
+                directly referenced in your bytecode are highlighted.
+                Declare them to avoid breakage when transitives change.
+                Managed view: entries in <dependencyManagement>
+                that are not direct dependencies. Use x to remove.
 
                 ## Table Columns
-                status          unused (declared) or undeclared (transitive)
+                status          ✓ used / ✗ unused / ? undetermined (when bytecode available)
                 dependency      groupId:artifactId
                 scope           Maven scope (compile, test, runtime, provided)
                 classifier      Artifact classifier (e.g. test-fixtures)

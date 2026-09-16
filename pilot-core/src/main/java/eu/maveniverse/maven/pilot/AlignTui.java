@@ -591,6 +591,10 @@ public class AlignTui extends ToolPanel {
                 ← / → / Enter  Cycle through option values
                 p               Preview the POM changes as a diff
                 w               Apply alignment and write to POM
+                              (in MANAGED mode with a parent POM:
+                               managed deps go to the parent,
+                               child modules get version-less refs)
+                h               Toggle this help screen
                 """;
         return HelpOverlay.parse(desc);
     }

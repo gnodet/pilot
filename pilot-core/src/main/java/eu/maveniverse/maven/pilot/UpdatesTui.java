@@ -1758,6 +1758,21 @@ public class UpdatesTui extends ToolPanel {
         String sectionTitle = singleModule ? "Dependency Updates" : "Reactor Dependency Updates";
         String actionsTitle = singleModule ? "Actions" : "Reactor Updates Actions";
 
+        List<HelpOverlay.Entry> actionEntries = new ArrayList<>();
+        actionEntries.add(new HelpOverlay.Entry("↑ / ↓", "Move selection up / down"));
+        actionEntries.add(new HelpOverlay.Entry("← / →", "Collapse / expand property group"));
+        actionEntries.add(new HelpOverlay.Entry("PgUp / PgDn", "Move selection up / down by one page"));
+        actionEntries.add(new HelpOverlay.Entry("Home / End", "Jump to first / last row"));
+        actionEntries.add(new HelpOverlay.Entry(KEY_SPACE + " / Enter", "Apply update to POM immediately"));
+        actionEntries.add(new HelpOverlay.Entry("Ctrl+Z", "Undo last change"));
+        actionEntries.add(new HelpOverlay.Entry("f / F", "Cycle filter: all → patch → minor → major"));
+        actionEntries.add(new HelpOverlay.Entry("d", "Show POM changes as a multi-file diff"));
+        actionEntries.add(new HelpOverlay.Entry("t", "Tree impact — preview transitive changes from upgrade"));
+        actionEntries.add(new HelpOverlay.Entry("i", "Toggle detail pane (scope, managed, modules, property origin)"));
+        if (!singleModule) {
+            actionEntries.add(new HelpOverlay.Entry("Tab", "Switch Dependencies / Modules view"));
+        }
+
         return List.of(
                 new HelpOverlay.Section(sectionTitle, descEntries),
                 new HelpOverlay.Section(
@@ -1766,19 +1781,7 @@ public class UpdatesTui extends ToolPanel {
                                 new HelpOverlay.Entry("dim", "Patch update — bug fixes, safe to apply"),
                                 new HelpOverlay.Entry("white", "Minor update — new features, usually compatible"),
                                 new HelpOverlay.Entry("yellow", "Major update — breaking changes possible"))),
-                new HelpOverlay.Section(
-                        actionsTitle,
-                        List.of(
-                                new HelpOverlay.Entry("↑ / ↓", "Move selection up / down"),
-                                new HelpOverlay.Entry("← / →", "Collapse / expand property group"),
-                                new HelpOverlay.Entry("PgUp / PgDn", "Move selection up / down by one page"),
-                                new HelpOverlay.Entry("Home / End", "Jump to first / last row"),
-                                new HelpOverlay.Entry(KEY_SPACE, "Apply update to POM immediately"),
-                                new HelpOverlay.Entry("Ctrl+Z", "Undo last change"),
-                                new HelpOverlay.Entry("f / F", "Cycle filter: all → patch → minor → major"),
-                                new HelpOverlay.Entry("d", "Show POM changes as a multi-file diff"),
-                                new HelpOverlay.Entry("t", "Tree impact — preview transitive changes from upgrade"),
-                                new HelpOverlay.Entry("i", "Toggle detail pane for selected row"))));
+                new HelpOverlay.Section(actionsTitle, actionEntries));
     }
 
     @Override
@@ -1811,10 +1814,8 @@ public class UpdatesTui extends ToolPanel {
                     ← / →           Collapse / expand module tree
                     """));
         }
-        String tabEntry = singleModule ? "" : "Tab             Switch Dependencies / Modules view\n";
         sections.addAll(HelpOverlay.parse("""
                 ## General
-                """ + tabEntry + """
                 h               Toggle this help screen
                 q / Esc         Quit
                 """));

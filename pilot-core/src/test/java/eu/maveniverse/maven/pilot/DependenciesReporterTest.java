@@ -272,8 +272,8 @@ class DependenciesReporterTest {
 
         String result = Files.readString(pomPath);
         assertThat(result).contains("ancestor-lib");
-        // Version must NOT appear: ancestor BOM already manages it
-        assertThat(result).doesNotContain("3.0");
+        // The newly added dependency must NOT have its resolved version hardcoded
+        assertThat(result).doesNotContain("<version>3.0</version>");
         assertThat(logs).anyMatch(l -> l.contains("version managed by ancestor"));
     }
 
@@ -306,7 +306,7 @@ class DependenciesReporterTest {
 
         String result = Files.readString(pomPath);
         assertThat(result).contains("test-lib");
-        assertThat(result).doesNotContain("2.5");
+        assertThat(result).doesNotContain("<version>2.5</version>");
         assertThat(result).contains("<scope>test</scope>");
     }
 
@@ -340,5 +340,35 @@ class DependenciesReporterTest {
 
         String result = Files.readString(pomPath);
         assertThat(result).contains("unmanaged-lib").contains("4.0");
+    }
+
+    @Test
+    void fixAncestorManagedNoDependenciesSection(@TempDir Path tempDir) throws Exception {
+        // Tests the case where the POM has no <dependencies> section yet
+        Path pomPath = tempDir.resolve("pom.xml");
+        Files.writeString(pomPath, """
+                <project>
+                  <groupId>org.example</groupId>
+                  <artifactId>my-module</artifactId>
+                  <version>1.0</version>
+                </project>
+                """);
+
+        var transitive = new DependenciesTui.DepEntry("org.managed", "bom-lib", "", "5.0", "compile", false);
+        List<String> logs = new ArrayList<>();
+        Set<String> ancestorManaged = Set.of("org.managed:bom-lib");
+
+        DependenciesReporter.fix(
+                pomPath,
+                List.of(),
+                List.of(transitive),
+                Map.of("org.managed:bom-lib", "5.0"),
+                ancestorManaged,
+                logs::add);
+
+        String result = Files.readString(pomPath);
+        assertThat(result).contains("bom-lib");
+        assertThat(result).doesNotContain("<version>5.0</version>");
+        assertThat(result).contains("<dependencies>");
     }
 }

@@ -19,7 +19,6 @@
 package eu.maveniverse.maven.pilot;
 
 import eu.maveniverse.domtrip.Document;
-import eu.maveniverse.domtrip.Element;
 import eu.maveniverse.domtrip.maven.AlignOptions;
 import eu.maveniverse.domtrip.maven.Coordinates;
 import eu.maveniverse.domtrip.maven.PomEditor;
@@ -92,10 +91,7 @@ public final class DependenciesReporter {
      *   <li>If the dependency is already managed by an ancestor BOM/parent POM
      *       ({@code ancestorManagedGAs} contains its GA key), it is added <em>without</em> a
      *       {@code <version>} element — the inherited management already pins the version.</li>
-     *   <li>Otherwise the resolved version from {@code gaToVersion} is used.  If the resolved
-     *       version equals a value that was originally expressed as a property in an ancestor
-     *       ({@code gaToVersionExpression} is non-null and contains the GA), the property
-     *       expression (e.g. {@code ${resolverVersion}}) is written instead of the literal.</li>
+     *   <li>Otherwise the resolved literal version from {@code gaToVersion} is used.</li>
      * </ul>
      *
      * @param pomPath               path to the POM file to modify
@@ -137,7 +133,14 @@ public final class DependenciesReporter {
 
             if (ancestorManagedGAs.contains(dep.ga())) {
                 // Already managed by an ancestor: add without <version>
-                addDependencyWithoutVersion(editor, groupId, artifactId, classifier, scope);
+                Coordinates coords = (classifier != null && !classifier.isEmpty())
+                        ? Coordinates.of(groupId, artifactId, null, classifier, "jar")
+                        : Coordinates.of(groupId, artifactId, null);
+                AlignOptions.Builder optBuilder = AlignOptions.builder();
+                if (scope != null && !scope.isEmpty() && !"compile".equals(scope)) {
+                    optBuilder.scope(scope);
+                }
+                editor.dependencies().addAligned(coords, optBuilder.build());
                 logger.log("Added used transitive dependency (version managed by ancestor): " + dep.ga());
             } else {
                 // Not ancestor-managed: add with the resolved version
@@ -181,26 +184,6 @@ public final class DependenciesReporter {
             FixLogger logger)
             throws IOException {
         fix(pomPath, unusedDeclared, usedTransitive, gaToVersion, Set.of(), logger);
-    }
-
-    /**
-     * Adds a dependency element without a {@code <version>} tag, using the project's detected
-     * indentation conventions for whitespace alignment.
-     */
-    private static void addDependencyWithoutVersion(
-            PomEditor editor, String groupId, String artifactId, String classifier, String scope) {
-        // Ensure <dependencies> element exists
-        Element deps = editor.findChildElement(editor.root(), "dependencies");
-        if (deps == null) {
-            deps = editor.insertMavenElement(editor.root(), "dependencies");
-        }
-        Element dep = editor.dependencies().addDependency(deps, groupId, artifactId, null);
-        if (classifier != null && !classifier.isEmpty()) {
-            editor.insertMavenElement(dep, "classifier", classifier);
-        }
-        if (scope != null && !scope.isEmpty() && !"compile".equals(scope)) {
-            editor.insertMavenElement(dep, "scope", scope);
-        }
     }
 
     public static void appendScope(StringBuilder sb, DependenciesTui.DepEntry dep) {

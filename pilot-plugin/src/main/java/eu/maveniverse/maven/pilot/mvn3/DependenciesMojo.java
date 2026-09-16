@@ -198,6 +198,11 @@ public class DependenciesMojo extends AbstractMojo {
      *
      * <p>When a used-transitive dependency is already managed by an ancestor, the fix action
      * should add it to {@code <dependencies>} without a {@code <version>} element.</p>
+     *
+     * <p>Note: dependencies provided by a BOM that is <em>imported</em> in this module's own
+     * {@code <dependencyManagement>} (via {@code <scope>import</scope>}) are classified as
+     * ancestor-managed. This is intentional — those dependencies are version-pinned by the BOM
+     * import, so omitting {@code <version>} is correct as long as the import remains present.</p>
      */
     static Set<String> buildAncestorManagedGAs(MavenProject proj) {
         // Collect GAs declared in this module's own <dependencyManagement>

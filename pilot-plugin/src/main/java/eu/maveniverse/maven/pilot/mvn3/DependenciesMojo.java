@@ -205,11 +205,14 @@ public class DependenciesMojo extends AbstractMojo {
      * import, so omitting {@code <version>} is correct as long as the import remains present.</p>
      */
     static Set<String> buildAncestorManagedGAs(MavenProject proj) {
-        // Collect GAs declared in this module's own <dependencyManagement>
+        // Collect GAs declared in this module's own <dependencyManagement> section (raw, unmerged).
+        // getOriginalModel() returns only this POM's own declarations, without parent inheritance —
+        // that is exactly what we want to exclude from the ancestor-managed set.
         Set<String> ownManagedGAs = new HashSet<>();
-        if (proj.getModel().getDependencyManagement() != null
-                && proj.getModel().getDependencyManagement().getDependencies() != null) {
-            for (Dependency dep : proj.getModel().getDependencyManagement().getDependencies()) {
+        if (proj.getOriginalModel().getDependencyManagement() != null
+                && proj.getOriginalModel().getDependencyManagement().getDependencies() != null) {
+            for (Dependency dep :
+                    proj.getOriginalModel().getDependencyManagement().getDependencies()) {
                 String classifier = dep.getClassifier();
                 String ga = (classifier != null && !classifier.isEmpty())
                         ? dep.getGroupId() + ":" + dep.getArtifactId() + ":" + classifier
@@ -218,18 +221,23 @@ public class DependenciesMojo extends AbstractMojo {
             }
         }
 
-        // Any GA in the effective <dependencyManagement> but not in the own section is ancestor-managed
+        // getManagedVersionMap() returns the full effective managed-version map (own + inherited),
+        // with keys in the form "groupId:artifactId:type[:classifier]".
+        // Any entry not covered by this module's own DM section is ancestor-managed.
         Set<String> ancestorManagedGAs = new HashSet<>();
-        if (proj.getDependencyManagement() != null
-                && proj.getDependencyManagement().getDependencies() != null) {
-            for (Dependency dep : proj.getDependencyManagement().getDependencies()) {
-                String classifier = dep.getClassifier();
-                String ga = (classifier != null && !classifier.isEmpty())
-                        ? dep.getGroupId() + ":" + dep.getArtifactId() + ":" + classifier
-                        : dep.getGroupId() + ":" + dep.getArtifactId();
-                if (!ownManagedGAs.contains(ga)) {
-                    ancestorManagedGAs.add(ga);
-                }
+        for (String artifactKey : proj.getManagedVersionMap().keySet()) {
+            // Artifact key format: groupId:artifactId:type[:classifier]
+            String[] parts = artifactKey.split(":");
+            if (parts.length < 3) continue;
+            String groupId = parts[0];
+            String artifactId = parts[1];
+            // type is parts[2]; classifier is parts[3] if present
+            String classifier = parts.length > 3 ? parts[3] : null;
+            String ga = (classifier != null && !classifier.isEmpty())
+                    ? groupId + ":" + artifactId + ":" + classifier
+                    : groupId + ":" + artifactId;
+            if (!ownManagedGAs.contains(ga)) {
+                ancestorManagedGAs.add(ga);
             }
         }
         return ancestorManagedGAs;

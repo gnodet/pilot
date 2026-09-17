@@ -124,9 +124,10 @@ public class DependenciesMojo extends AbstractMojo {
      * Dependencies explicitly declared as used, overriding the bytecode analyser result.
      *
      * <p>Each entry is a {@code groupId:artifactId} pattern (same syntax as
-     * {@code ignoredUnusedDeclared}). Matching dependencies whose status is
+     * {@code ignoredUnusedDeclared}). Matching <em>declared</em> dependencies whose status is
      * {@code UNDETERMINED} are treated as {@code USED} — they will not appear in
-     * the undetermined list and will not be removed by the fix action.</p>
+     * the undetermined list and will not be removed by the fix action.
+     * This annotation has no effect on transitive dependencies.</p>
      *
      * <p>It is an error to mark a dependency as {@code knownUsed} when the analyser
      * has already confidently determined it to be {@code UNUSED}: the annotation is
@@ -141,9 +142,10 @@ public class DependenciesMojo extends AbstractMojo {
      * Dependencies explicitly declared as unused, overriding the bytecode analyser result.
      *
      * <p>Each entry is a {@code groupId:artifactId} pattern (same syntax as
-     * {@code ignoredUnusedDeclared}). Matching dependencies whose status is
+     * {@code ignoredUnusedDeclared}). Matching <em>declared</em> dependencies whose status is
      * {@code UNDETERMINED} are treated as {@code UNUSED} — they will appear in the
-     * unused-declared list and can be removed by the fix action.</p>
+     * unused-declared list and can be removed by the fix action.
+     * This annotation has no effect on transitive dependencies.</p>
      *
      * <p>It is an error to mark a dependency as {@code knownUnused} when the analyser
      * has already confidently determined it to be {@code USED}: the annotation is

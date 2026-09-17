@@ -59,6 +59,19 @@ public final class DependencyUsageAnalyzer {
     private static final String META_INF_SISU = "META-INF/sisu/";
     private static final String META_INF_MAVEN_DI = "META-INF/maven/";
     private static final Set<String> TEST_SCOPES = Set.of("test", "test-only", "test-runtime");
+
+    /**
+     * Returns {@code true} if the given Maven scope is test-only
+     * ({@code test}, {@code test-only}, or {@code test-runtime}).
+     *
+     * <p>Test-scoped dependencies are checked against both main and test bytecode
+     * references. When test classes have not been compiled, their usage cannot be
+     * determined from bytecode analysis alone.</p>
+     */
+    public static boolean isTestScope(String scope) {
+        return scope != null && TEST_SCOPES.contains(scope);
+    }
+
     /**
      * Scopes in which annotation processors may be legitimately declared. An annotation processor JAR (one whose
      * {@code META-INF/services/javax.annotation.processing.Processor} entry is present) is considered used when
@@ -194,7 +207,7 @@ public final class DependencyUsageAnalyzer {
         // Maven 3 scopes: compile, provided, runtime, test, system.
         // Maven 4.1.0+ adds: compile-only, test-only, test-runtime.
         // Test-related scopes are checked against allRefs (main + test); others against mainRefs only.
-        Set<String> refs = TEST_SCOPES.contains(dep.scope) ? allRefs : mainRefs;
+        Set<String> refs = isTestScope(dep.scope) ? allRefs : mainRefs;
 
         Set<String> depClasses = gaToClasses.get(dep.ga());
         if (depClasses != null && !Collections.disjoint(depClasses, refs)) {

@@ -57,13 +57,18 @@ import org.eclipse.aether.resolution.DependencyResult;
  * use {@code pilot:pilot} instead.</p>
  *
  * <p>When the project has been compiled ({@code target/classes} exists), performs bytecode-level
- * analysis to determine which dependencies are actually referenced in code.</p>
+ * analysis to determine which dependencies are actually referenced in code.
+ * For accurate analysis of test-scoped dependencies, {@code target/test-classes} must also
+ * exist (i.e. at least the {@code test-compile} phase must have run). If test classes are absent
+ * and the project declares test-scoped dependencies, the mojo fails — use
+ * {@code -Dpilot.skipTestScope=true} to skip test-scope analysis entirely.</p>
  *
  * <p>Usage:</p>
  * <pre>
- * mvn compile pilot:dependencies
- * mvn compile pilot:dependencies -Dpilot.action=check
- * mvn compile pilot:dependencies -Dpilot.action=fix
+ * mvn test-compile pilot:dependencies                              # full analysis (recommended)
+ * mvn test-compile pilot:dependencies -Dpilot.action=check
+ * mvn test-compile pilot:dependencies -Dpilot.action=fix
+ * mvn compile pilot:dependencies -Dpilot.skipTestScope=true  # skip test-scope analysis
  * </pre>
  *
  * @since 0.1.0
@@ -79,6 +84,18 @@ public class DependenciesMojo extends AbstractMojo {
 
     @Parameter(property = "pilot.action", defaultValue = "report")
     String action = "report";
+
+    /**
+     * When {@code true}, test-scoped dependencies are excluded from analysis entirely.
+     * Use this when {@code target/test-classes} has not been compiled (e.g. after
+     * {@code mvn compile} only) and you want to proceed without test-scope analysis.
+     * <p>
+     * When {@code false} (default) and {@code target/test-classes} is absent but
+     * the project has test-scoped dependencies, the mojo fails with an error.
+     * </p>
+     */
+    @Parameter(property = "pilot.skipTestScope", defaultValue = "false")
+    boolean skipTestScope = false;
 
     @Parameter
     private List<String> runtimeArtifacts;
@@ -116,11 +133,30 @@ public class DependenciesMojo extends AbstractMojo {
         }
     }
 
-    private void executeForProject(MavenProject proj) throws Exception {
+    void executeForProject(MavenProject proj) throws Exception {
         if ("pom".equals(proj.getPackaging())) {
             getLog().debug("Skipping " + proj.getArtifactId() + " (pom packaging, no classes to analyse).");
             return;
         }
+
+        // Early-exit guards: check filesystem state before the expensive dependency resolution.
+        Path classesDir = Path.of(proj.getBuild().getOutputDirectory());
+        Path testClassesDir = Path.of(proj.getBuild().getTestOutputDirectory());
+
+        if (!Files.isDirectory(classesDir)) {
+            throw new MojoExecutionException(
+                    "target/classes not found." + " Run 'mvn compile pilot:dependencies' first.");
+        }
+        if (!skipTestScope
+                && !Files.isDirectory(testClassesDir)
+                && proj.getDependencies().stream()
+                        .anyMatch(dep -> DependencyUsageAnalyzer.isTestScope(dep.getScope()))) {
+            throw new MojoExecutionException(
+                    "target/test-classes not found but the project declares test-scoped dependencies."
+                            + " Run 'mvn test-compile pilot:dependencies' for accurate analysis,"
+                            + " or use -Dpilot.skipTestScope=true to exclude test-scope analysis.");
+        }
+
         Set<String> declaredGAs = new HashSet<>();
         List<DependenciesTui.DepEntry> declared = new ArrayList<>();
         for (Dependency dep : proj.getDependencies()) {
@@ -163,31 +199,35 @@ public class DependenciesMojo extends AbstractMojo {
         // should add it without a <version> element rather than hardcoding the resolved literal.
         Set<String> ancestorManagedGAs = buildAncestorManagedGAs(proj);
 
-        Path classesDir = Path.of(proj.getBuild().getOutputDirectory());
-        Path testClassesDir = Path.of(proj.getBuild().getTestOutputDirectory());
+        // classesDir and testClassesDir are guaranteed to be in correct state by the early-exit guards above.
+        ClassFileScanner.ScanResult mainScan = ClassFileScanner.scanDirectory(classesDir);
+        boolean testClassesScanned = Files.isDirectory(testClassesDir);
+        ClassFileScanner.ScanResult testScan;
 
-        DependencyUsageAnalyzer.AnalysisResult usage = null;
-        if (Files.isDirectory(classesDir)) {
-
-            ClassFileScanner.ScanResult mainScan = ClassFileScanner.scanDirectory(classesDir);
-            ClassFileScanner.ScanResult testScan = Files.isDirectory(testClassesDir)
-                    ? ClassFileScanner.scanDirectory(testClassesDir)
-                    : new ClassFileScanner.ScanResult(Set.of(), Map.of());
-
-            Map<String, String> classIndex = DependencyUsageAnalyzer.buildClassIndex(gaToJar);
-            usage = buildAnalyzer()
-                    .analyze(
-                            mainScan.referencedClasses(),
-                            testScan.referencedClasses(),
-                            classIndex,
-                            gaToJar,
-                            declared,
-                            transitive);
-            applyUsageStatus(declared, transitive, usage);
+        if (skipTestScope) {
+            getLog().info("Skipping test-scope dependency analysis (pilot.skipTestScope=true).");
+            // Exclude test-scoped deps from both lists before analysis so they are never
+            // classified and never added/removed by the fix action.
+            declared.removeIf(dep -> DependencyUsageAnalyzer.isTestScope(dep.scope));
+            transitive.removeIf(dep -> DependencyUsageAnalyzer.isTestScope(dep.scope));
+            testScan = new ClassFileScanner.ScanResult(Set.of(), Map.of());
+        } else if (testClassesScanned) {
+            testScan = ClassFileScanner.scanDirectory(testClassesDir);
         } else {
-            throw new MojoExecutionException(
-                    "target/classes not found — run 'mvn compile' before dependencies report/check/fix.");
+            // No test sources (checked above) — proceed without test bytecode.
+            testScan = new ClassFileScanner.ScanResult(Set.of(), Map.of());
         }
+
+        Map<String, String> classIndex = DependencyUsageAnalyzer.buildClassIndex(gaToJar);
+        DependencyUsageAnalyzer.AnalysisResult usage = buildAnalyzer()
+                .analyze(
+                        mainScan.referencedClasses(),
+                        testScan.referencedClasses(),
+                        classIndex,
+                        gaToJar,
+                        declared,
+                        transitive);
+        applyUsageStatus(declared, transitive, usage);
 
         executeNonInteractive(proj, declared, transitive, gaToVersion, ancestorManagedGAs);
     }

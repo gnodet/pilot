@@ -255,9 +255,9 @@ public class DependenciesMojo extends AbstractMojo {
      * version-managed in an ancestor via a property, it should write the property expression rather
      * than the resolved literal — preserving the project's version-property conventions.</p>
      *
-     * <p>Only non-ancestor-managed GAs need this lookup (ancestor-managed deps get no
-     * {@code <version>} element at all). The nearest ancestor wins: the parent POM is consulted
-     * first, then its parent, and so on.</p>
+     * <p>Callers should only consult this map for non-ancestor-managed GAs (ancestor-managed deps
+     * get no {@code <version>} element at all). The nearest ancestor wins: the parent POM is
+     * consulted first, then its parent, and so on.</p>
      */
     static Map<String, String> buildGaToRawVersionMap(MavenProject proj) {
         Map<String, String> result = new LinkedHashMap<>();

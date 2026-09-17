@@ -84,6 +84,7 @@ public class AlignTui extends ToolPanel {
     private AlignOptions.VersionStyle selectedStyle;
     private AlignOptions.VersionSource selectedSource;
     private AlignOptions.PropertyNamingConvention selectedNaming;
+    private AlignOptions.InsertionOrdering selectedOrdering;
 
     private Phase phase = Phase.SELECT;
     private final TableState tableState = new TableState();
@@ -115,6 +116,7 @@ public class AlignTui extends ToolPanel {
                     .versionStyle(detectedOptions.versionStyle())
                     .versionSource(parentInfo.detectedOptions().versionSource())
                     .namingConvention(parentInfo.detectedOptions().namingConvention())
+                    .insertionOrdering(parentInfo.detectedOptions().insertionOrdering())
                     .build();
         } else {
             this.detectedOptions = detectedOptions;
@@ -123,6 +125,7 @@ public class AlignTui extends ToolPanel {
         this.selectedStyle = this.detectedOptions.versionStyle();
         this.selectedSource = this.detectedOptions.versionSource();
         this.selectedNaming = this.detectedOptions.namingConvention();
+        this.selectedOrdering = this.detectedOptions.insertionOrdering();
         if (!additionalPomPaths.isEmpty()) {
             this.status = "Batch mode: aligning " + (1 + additionalPomPaths.size()) + " modules";
         } else if (parentInfo != null) {
@@ -270,6 +273,7 @@ public class AlignTui extends ToolPanel {
                 .versionStyle(selectedStyle)
                 .versionSource(selectedSource)
                 .namingConvention(selectedNaming)
+                .insertionOrdering(selectedOrdering)
                 .build();
     }
 

@@ -94,6 +94,14 @@ public class AlignMojo extends AbstractMojo {
     @Parameter(property = "pilot.namingConvention")
     String namingConvention;
 
+    /**
+     * Target insertion ordering for headless modes.
+     * One of: {@code NONE}, {@code ALPHA}, {@code SCOPE}, {@code SCOPE_THEN_ALPHA}.
+     * When omitted, the detected convention is used as default.
+     */
+    @Parameter(property = "pilot.insertionOrdering")
+    String insertionOrdering;
+
     @Override
     public void execute() throws MojoExecutionException, MojoFailureException {
         if (!("report".equals(action) || "check".equals(action) || "fix".equals(action))) {
@@ -147,6 +155,7 @@ public class AlignMojo extends AbstractMojo {
         AlignOptions.VersionStyle style = detected.versionStyle();
         AlignOptions.VersionSource source = detected.versionSource();
         AlignOptions.PropertyNamingConvention naming = detected.namingConvention();
+        AlignOptions.InsertionOrdering ordering = detected.insertionOrdering();
 
         if (versionStyle != null) {
             try {
@@ -172,11 +181,20 @@ public class AlignMojo extends AbstractMojo {
                         + "'. Valid values: DOT_SUFFIX, DASH_SUFFIX, CAMEL_CASE, DOT_PREFIX.");
             }
         }
+        if (insertionOrdering != null) {
+            try {
+                ordering = AlignOptions.InsertionOrdering.valueOf(insertionOrdering.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException e) {
+                throw new MojoExecutionException("Invalid pilot.insertionOrdering '" + insertionOrdering
+                        + "'. Valid values: NONE, ALPHA, SCOPE, SCOPE_THEN_ALPHA.");
+            }
+        }
 
         return AlignOptions.builder()
                 .versionStyle(style)
                 .versionSource(source)
                 .namingConvention(naming)
+                .insertionOrdering(ordering)
                 .build();
     }
 

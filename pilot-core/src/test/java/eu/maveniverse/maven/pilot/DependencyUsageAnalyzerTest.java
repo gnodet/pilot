@@ -758,21 +758,100 @@ class DependencyUsageAnalyzerTest {
     }
 
     @Test
-    void serviceLoaderOnlyWithoutBytecodeRefIsNotUndetermined(@TempDir Path tempDir) throws Exception {
-        // ServiceLoader-only dep: hasMavenDiOrSisu=false → classifyByRuntimeDiscovery returns null
-        // Falls through to depClasses check → UNUSED (not UNDETERMINED)
+    void serviceLoaderOnlyWithoutBytecodeRefIsUndetermined(@TempDir Path tempDir) throws Exception {
+        // ServiceLoader-only dep: hasMavenDiOrSisu=false but has META-INF/services/<X> →
+        // classifyByRuntimeDiscovery returns UNDETERMINED (bytecode analysis can't verify
+        // whether a ServiceLoader-based provider is actually consumed at runtime).
         Path tempJar = tempDir.resolve("svc.jar");
         createJarWithEntries(tempJar, "META-INF/services/com.example.SomeService");
 
         var dep = new DependenciesTui.DepEntry("com.example", "svc", "", "1.0", "compile", true);
         Map<String, File> gaToJar = Map.of("com.example:svc", tempJar.toFile());
-        // classIndex has a class for the dep → depClasses != null → UNUSED (not UNDETERMINED)
         Map<String, String> classIndex = Map.of("com.example.SomeService", "com.example:svc");
 
         var result = DependencyUsageAnalyzer.builder()
                 .build()
                 .analyze(Set.of("com.other.Unrelated"), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage()).containsEntry("com.example:svc", DependencyUsageAnalyzer.UsageStatus.UNUSED);
+        assertThat(result.declaredUsage())
+                .containsEntry("com.example:svc", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
+    // --- SLF4J binding / logging backend false-positive reproducer ---
+
+    /**
+     * Reproducer for the SLF4J binding false-positive.
+     * <p>
+     * {@code log4j-slf4j2-impl} ships {@code META-INF/services/org.slf4j.spi.SLF4JServiceProvider}, which is loaded by
+     * the SLF4J framework at runtime via {@link java.util.ServiceLoader}. The consuming module (e.g.
+     * {@code camel-timer}) never references {@code org.slf4j.spi.SLF4JServiceProvider} directly in its bytecode — SLF4J
+     * does that internally.
+     * <p>
+     * Expected: a pure ServiceLoader implementation binding declared with test scope and providing no bytecode
+     * reference in the consumer should be classified as {@link DependencyUsageAnalyzer.UsageStatus#UNDETERMINED}
+     * (cannot be verified from bytecode), not {@link DependencyUsageAnalyzer.UsageStatus#UNUSED}.
+     */
+    @Test
+    void slf4jBindingViaServiceLoaderShouldNotBeUnused(@TempDir Path tempDir) throws Exception {
+        // Simulates log4j-slf4j2-impl: has META-INF/services/org.slf4j.spi.SLF4JServiceProvider
+        // but the consumer never imports that interface directly.
+        Path tempJar = tempDir.resolve("log4j-slf4j2-impl.jar");
+        createJarWithEntries(
+                tempJar,
+                "META-INF/services/org.slf4j.spi.SLF4JServiceProvider",
+                "org/apache/logging/slf4j/Log4jLoggerFactory.class");
+
+        var dep =
+                new DependenciesTui.DepEntry("org.apache.logging.log4j", "log4j-slf4j2-impl", "", "2.25", "test", true);
+        Map<String, File> gaToJar = Map.of("org.apache.logging.log4j:log4j-slf4j2-impl", tempJar.toFile());
+        Map<String, String> classIndex =
+                Map.of("org.apache.logging.slf4j.Log4jLoggerFactory", "org.apache.logging.log4j:log4j-slf4j2-impl");
+
+        // Consumer (e.g. camel-timer) does not reference SLF4JServiceProvider or any log4j class
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(
+                        Set.of("org.apache.camel.component.timer.TimerConsumer"),
+                        Set.of(),
+                        classIndex,
+                        gaToJar,
+                        List.of(dep),
+                        List.of());
+
+        // Should be UNDETERMINED — it is a ServiceLoader-based SLF4J backend whose service interface
+        // is not referenced in the consumer's bytecode. Bytecode analysis cannot verify whether the
+        // provider is actually needed at runtime.
+        assertThat(result.declaredUsage().get("org.apache.logging.log4j:log4j-slf4j2-impl"))
+                .isEqualTo(DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
+    /**
+     * Verifies that a dep in the {@code runtimeArtifacts} allowlist is always reported as USED, even when it has
+     * ServiceLoader metadata that would otherwise cause {@code classifyByRuntimeDiscovery} to return UNDETERMINED.
+     * <p>
+     * Regression guard for the allowlist-bypass bug: before the fix, {@code classifyByRuntimeDiscovery} short-circuited
+     * {@code classify()} before reaching the allowlist check, so an explicit {@code runtimeArtifacts} entry was
+     * silently overridden.
+     */
+    @Test
+    void runtimeArtifactsAllowlistWinsOverServiceLoaderUndetermined(@TempDir Path tempDir) throws Exception {
+        // Simulates org.postgresql:postgresql: has META-INF/services/java.sql.Driver (ServiceLoader)
+        // but the consumer never references java.sql.Driver directly.
+        Path tempJar = tempDir.resolve("postgresql.jar");
+        createJarWithEntries(tempJar, "META-INF/services/java.sql.Driver", "org/postgresql/Driver.class");
+
+        var dep = new DependenciesTui.DepEntry("org.postgresql", "postgresql", "", "42.7.3", "runtime", true);
+        Map<String, File> gaToJar = Map.of("org.postgresql:postgresql", tempJar.toFile());
+        Map<String, String> classIndex = Map.of("org.postgresql.Driver", "org.postgresql:postgresql");
+
+        // Analyzer is configured with postgresql in runtimeArtifacts
+        var result = DependencyUsageAnalyzer.builder()
+                .runtimeArtifacts(Set.of("org.postgresql:postgresql"))
+                .build()
+                .analyze(Set.of("com.example.App"), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+
+        // runtimeArtifacts allowlist must win: USED, not UNDETERMINED
+        assertThat(result.declaredUsage().get("org.postgresql:postgresql"))
+                .isEqualTo(DependencyUsageAnalyzer.UsageStatus.USED);
     }
 }

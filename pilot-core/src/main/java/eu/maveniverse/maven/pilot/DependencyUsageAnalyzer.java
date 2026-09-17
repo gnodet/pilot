@@ -209,7 +209,7 @@ public final class DependencyUsageAnalyzer {
             return null;
         }
         DiscoveryInfo info = scanDiscoveryMetadata(jarFile);
-        if (!info.hasDiMetadata()) {
+        if (!info.hasAnyDiscoveryMetadata()) {
             return null;
         }
         // If the consumer directly references the registered service interface, it's clearly used.
@@ -239,7 +239,7 @@ public final class DependencyUsageAnalyzer {
      * @param hasMavenDiOrSisu {@code true} if the JAR has a Maven DI or Sisu index
      */
     record DiscoveryInfo(Set<String> discoveryClasses, boolean hasMavenDiOrSisu) {
-        boolean hasDiMetadata() {
+        boolean hasAnyDiscoveryMetadata() {
             return !discoveryClasses.isEmpty();
         }
     }
@@ -310,6 +310,10 @@ public final class DependencyUsageAnalyzer {
         return !remainder.contains("/") && !remainder.isEmpty();
     }
 
+    /**
+     * Returns {@code true} for a {@code META-INF/sisu/<annotation-fqn>} entry
+     * (flat file, no sub-path), e.g. {@code META-INF/sisu/javax.inject.Named}.
+     */
     private static boolean isSisuEntry(String name) {
         if (!name.startsWith(META_INF_SISU) || name.equals(META_INF_SISU)) {
             return false;

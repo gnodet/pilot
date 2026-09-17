@@ -659,4 +659,23 @@ class DependencyUsageAnalyzerTest {
         Set<String> classes = DependencyUsageAnalyzer.getRuntimeDiscoveryClasses(tempJar.toFile());
         assertThat(classes).contains("org.apache.maven.api.di.Inject");
     }
+
+    @Test
+    void serviceLoaderOnlyWithoutBytecodeRefIsNotUndetermined(@TempDir Path tempDir) throws Exception {
+        // ServiceLoader-only dep: hasMavenDiOrSisu=false → classifyByRuntimeDiscovery returns null
+        // Falls through to depClasses check → UNUSED (not UNDETERMINED)
+        Path tempJar = tempDir.resolve("svc.jar");
+        createJarWithEntries(tempJar, "META-INF/services/com.example.SomeService");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "svc", "", "1.0", "compile", true);
+        Map<String, File> gaToJar = Map.of("com.example:svc", tempJar.toFile());
+        // classIndex has a class for the dep → depClasses != null → UNUSED (not UNDETERMINED)
+        Map<String, String> classIndex = Map.of("com.example.SomeService", "com.example:svc");
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(Set.of("com.other.Unrelated"), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+
+        assertThat(result.declaredUsage()).containsEntry("com.example:svc", DependencyUsageAnalyzer.UsageStatus.UNUSED);
+    }
 }

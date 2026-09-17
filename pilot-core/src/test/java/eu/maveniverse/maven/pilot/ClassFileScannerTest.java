@@ -85,4 +85,36 @@ class ClassFileScannerTest {
         assertThat(ClassFileScanner.formatDescriptor("(Ljava/lang/String;I)Z")).isEqualTo("(String, int)");
         assertThat(ClassFileScanner.formatDescriptor("([Ljava/lang/Object;)V")).isEqualTo("(Object[])");
     }
+
+    /**
+     * Regression test for <a href="https://github.com/maveniverse/pilot/issues/158">issue #158</a>:
+     * the bytecode scanner must detect annotation types used only as annotations (not appearing in
+     * method/field descriptors or call sites).
+     *
+     * <p>Specifically verifies:
+     * <ul>
+     *   <li>Class-level annotation types are collected ({@code @Test} on methods in this class)</li>
+     *   <li>Field-level annotation types are collected ({@link org.junit.jupiter.api.io.TempDir}
+     *       on a field in {@link AnnotationFixture})</li>
+     * </ul>
+     */
+    @Test
+    void scanDetectsAnnotationOnlyDependencies() throws Exception {
+        Path testClasses = Path.of("target/test-classes");
+        if (!Files.isDirectory(testClasses)) {
+            return;
+        }
+
+        ClassFileScanner.ScanResult result = ClassFileScanner.scanDirectory(testClasses);
+
+        // @Test is a method-level annotation used in many test classes — must be detected
+        assertThat(result.referencedClasses())
+                .as("method-level annotation type @Test must be detected")
+                .contains("org.junit.jupiter.api.Test");
+
+        // @TempDir is used as a field annotation in AnnotationFixture — tests the field-annotation path
+        assertThat(result.referencedClasses())
+                .as("field-level annotation type @TempDir must be detected (regression: issue #158)")
+                .contains("org.junit.jupiter.api.io.TempDir");
+    }
 }

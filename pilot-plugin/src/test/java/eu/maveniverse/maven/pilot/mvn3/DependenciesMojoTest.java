@@ -22,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -149,13 +150,13 @@ class DependenciesMojoTest {
     @Test
     void buildAncestorManagedGAs_emptyWhenNoDependencyManagement() throws Exception {
         MavenProject proj = new MavenProject();
-        proj.setFile(File.createTempFile("pom", ".xml"));
+        proj.setFile(Files.createTempFile("pom", ".xml").toFile());
         assertThat(DependenciesMojo.buildAncestorManagedGAs(proj)).isEmpty();
     }
 
     @Test
     void buildAncestorManagedGAs_ownEntryExcluded() throws Exception {
-        File pomFile = File.createTempFile("pom", ".xml");
+        File pomFile = Files.createTempFile("pom", ".xml").toFile();
         String ownPath = pomFile.toPath().normalize().toString();
 
         Dependency own = dep("com.example", "own-lib", "1.0", locFor(ownPath));
@@ -169,7 +170,7 @@ class DependenciesMojoTest {
 
     @Test
     void buildAncestorManagedGAs_parentInheritedIncluded() throws Exception {
-        File pomFile = File.createTempFile("pom", ".xml");
+        File pomFile = Files.createTempFile("pom", ".xml").toFile();
         Dependency inherited = dep("org.parent", "parent-dep", "3.0", locFor("/some/parent/pom.xml"));
 
         Set<String> result = DependenciesMojo.buildAncestorManagedGAs(projectWithDM(pomFile, List.of(inherited)));
@@ -179,7 +180,7 @@ class DependenciesMojoTest {
 
     @Test
     void buildAncestorManagedGAs_nullInputLocationTreatedAsAncestor() throws Exception {
-        File pomFile = File.createTempFile("pom", ".xml");
+        File pomFile = Files.createTempFile("pom", ".xml").toFile();
         // Dependency with no InputLocation metadata — treated conservatively as ancestor-managed.
         Dependency noLoc = new Dependency();
         noLoc.setGroupId("com.unknown");
@@ -194,7 +195,7 @@ class DependenciesMojoTest {
 
     @Test
     void buildAncestorManagedGAs_classifiedDependencyIncluded() throws Exception {
-        File pomFile = File.createTempFile("pom", ".xml");
+        File pomFile = Files.createTempFile("pom", ".xml").toFile();
         Dependency classified = dep("com.other", "lib", "1.0", locFor("/parent/pom.xml"));
         classified.setClassifier("tests");
 

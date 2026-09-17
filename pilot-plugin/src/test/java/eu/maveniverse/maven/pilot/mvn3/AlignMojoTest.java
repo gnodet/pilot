@@ -58,6 +58,7 @@ class AlignMojoTest {
                 .versionStyle(AlignOptions.VersionStyle.INLINE)
                 .versionSource(AlignOptions.VersionSource.LITERAL)
                 .namingConvention(AlignOptions.PropertyNamingConvention.DOT_SUFFIX)
+                .insertionOrdering(AlignOptions.InsertionOrdering.NONE)
                 .build();
     }
 
@@ -89,14 +90,25 @@ class AlignMojoTest {
     }
 
     @Test
+    void buildOptionsRejectsInvalidInsertionOrdering() {
+        var mojo = new AlignMojo();
+        mojo.insertionOrdering = "bogus";
+        assertThatThrownBy(() -> mojo.buildOptions(defaultAlignOptions()))
+                .isInstanceOf(MojoExecutionException.class)
+                .hasMessageContaining("Invalid pilot.insertionOrdering");
+    }
+
+    @Test
     void buildOptionsAcceptsLowercaseValues() throws Exception {
         var mojo = new AlignMojo();
         mojo.versionStyle = "managed";
         mojo.versionSource = "property";
         mojo.namingConvention = "dot_suffix";
+        mojo.insertionOrdering = "scope_then_alpha";
         AlignOptions opts = mojo.buildOptions(defaultAlignOptions());
         assertThat(opts.versionStyle()).isEqualTo(AlignOptions.VersionStyle.MANAGED);
         assertThat(opts.versionSource()).isEqualTo(AlignOptions.VersionSource.PROPERTY);
         assertThat(opts.namingConvention()).isEqualTo(AlignOptions.PropertyNamingConvention.DOT_SUFFIX);
+        assertThat(opts.insertionOrdering()).isEqualTo(AlignOptions.InsertionOrdering.SCOPE_THEN_ALPHA);
     }
 }

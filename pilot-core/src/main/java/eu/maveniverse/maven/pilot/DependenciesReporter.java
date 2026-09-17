@@ -86,11 +86,15 @@ public final class DependenciesReporter {
     /**
      * Apply fixes to the POM: remove unused declared and add used transitive dependencies.
      *
-     * <p>When adding used transitive dependencies, honours ancestor dependency management:</p>
+     * <p>When adding used transitive dependencies, honours ancestor dependency management and
+     * property expressions:</p>
      * <ul>
      *   <li>If the dependency is already managed by an ancestor BOM/parent POM
      *       ({@code ancestorManagedGAs} contains its GA key), it is added <em>without</em> a
      *       {@code <version>} element — the inherited management already pins the version.</li>
+     *   <li>Otherwise, if the ancestor POM's {@code <dependencyManagement>} expresses the version
+     *       via a property (e.g. {@code ${resolverVersion}}), that raw expression is written
+     *       verbatim from {@code gaToRawVersion} — preserving the project's convention.</li>
      *   <li>Otherwise the resolved literal version from {@code gaToVersion} is used.</li>
      * </ul>
      *
@@ -98,6 +102,9 @@ public final class DependenciesReporter {
      * @param unusedDeclared        declared dependencies that are unused
      * @param usedTransitive        transitive dependencies that are used directly
      * @param gaToVersion           resolved (literal) versions keyed by {@code groupId:artifactId}
+     * @param gaToRawVersion        raw version expressions from ancestor DM (may be {@code ${prop}} references);
+     *                              keyed by {@code groupId:artifactId}; preferred over {@code gaToVersion}
+     *                              for non-ancestor-managed deps
      * @param ancestorManagedGAs    GAs already version-managed by an ancestor; version is omitted for these
      * @param logger                callback for progress messages
      */
@@ -106,6 +113,7 @@ public final class DependenciesReporter {
             List<DependenciesTui.DepEntry> unusedDeclared,
             List<DependenciesTui.DepEntry> usedTransitive,
             Map<String, String> gaToVersion,
+            Map<String, String> gaToRawVersion,
             Set<String> ancestorManagedGAs,
             FixLogger logger)
             throws IOException {
@@ -132,8 +140,16 @@ public final class DependenciesReporter {
             PomEditor editor = new PomEditor(Document.of(pomContent));
 
             boolean ancestorManaged = ancestorManagedGAs.contains(dep.ga());
-            // null version = ancestor-managed (no <version> emitted); resolved version otherwise
-            String version = ancestorManaged ? null : gaToVersion.getOrDefault(dep.ga(), "");
+            // null version = ancestor-managed (no <version> emitted)
+            // raw expression (e.g. "${resolverVersion}") = ancestor DM uses a property
+            // resolved literal = fallback
+            String version;
+            if (ancestorManaged) {
+                version = null;
+            } else {
+                String rawExpr = gaToRawVersion.get(dep.ga());
+                version = (rawExpr != null) ? rawExpr : gaToVersion.getOrDefault(dep.ga(), "");
+            }
             Coordinates coords = (classifier != null && !classifier.isEmpty())
                     ? Coordinates.of(groupId, artifactId, version, classifier, "jar")
                     : Coordinates.of(groupId, artifactId, version);
@@ -158,6 +174,27 @@ public final class DependenciesReporter {
     }
 
     /**
+     * Apply fixes to the POM with ancestor-management awareness but without raw-expression lookup.
+     *
+     * @param pomPath               path to the POM file to modify
+     * @param unusedDeclared        declared dependencies that are unused
+     * @param usedTransitive        transitive dependencies that are used directly
+     * @param gaToVersion           resolved (literal) versions keyed by {@code groupId:artifactId}
+     * @param ancestorManagedGAs    GAs already version-managed by an ancestor; version is omitted for these
+     * @param logger                callback for progress messages
+     */
+    public static void fix(
+            Path pomPath,
+            List<DependenciesTui.DepEntry> unusedDeclared,
+            List<DependenciesTui.DepEntry> usedTransitive,
+            Map<String, String> gaToVersion,
+            Set<String> ancestorManagedGAs,
+            FixLogger logger)
+            throws IOException {
+        fix(pomPath, unusedDeclared, usedTransitive, gaToVersion, Map.of(), ancestorManagedGAs, logger);
+    }
+
+    /**
      * Apply fixes to the POM without ancestor-management awareness (backward-compatible overload).
      *
      * @param pomPath        path to the POM file to modify
@@ -173,7 +210,7 @@ public final class DependenciesReporter {
             Map<String, String> gaToVersion,
             FixLogger logger)
             throws IOException {
-        fix(pomPath, unusedDeclared, usedTransitive, gaToVersion, Set.of(), logger);
+        fix(pomPath, unusedDeclared, usedTransitive, gaToVersion, Map.of(), Set.of(), logger);
     }
 
     public static void appendScope(StringBuilder sb, DependenciesTui.DepEntry dep) {

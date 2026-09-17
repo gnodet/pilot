@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -163,6 +164,11 @@ public class DependenciesMojo extends AbstractMojo {
         // should add it without a <version> element rather than hardcoding the resolved literal.
         Set<String> ancestorManagedGAs = buildAncestorManagedGAs(proj);
 
+        // Build map of GA → raw version expression from the nearest ancestor DM.
+        // When a non-ancestor-managed dep's version is expressed as a property (e.g. ${resolverVersion})
+        // in an ancestor POM, we write that expression rather than the Aether-resolved literal.
+        Map<String, String> gaToRawVersion = buildGaToRawVersionMap(proj);
+
         Path classesDir = Path.of(proj.getBuild().getOutputDirectory());
         Path testClassesDir = Path.of(proj.getBuild().getTestOutputDirectory());
 
@@ -189,7 +195,7 @@ public class DependenciesMojo extends AbstractMojo {
                     "target/classes not found — run 'mvn compile' before dependencies report/check/fix.");
         }
 
-        executeNonInteractive(proj, declared, transitive, gaToVersion, ancestorManagedGAs);
+        executeNonInteractive(proj, declared, transitive, gaToVersion, gaToRawVersion, ancestorManagedGAs);
     }
 
     /**
@@ -239,6 +245,40 @@ public class DependenciesMojo extends AbstractMojo {
         return ancestorManagedGAs;
     }
 
+    /**
+     * Builds a map from {@code groupId:artifactId} to the <em>raw</em> version string declared in
+     * the nearest ancestor {@code <dependencyManagement>} section.
+     *
+     * <p>Unlike the Aether-resolved versions in {@code gaToVersion} (which are always interpolated
+     * literals, e.g. {@code 2.0.22}), the raw version may be a property reference such as
+     * {@code ${resolverVersion}}. When the fix action promotes a used-transitive dependency that is
+     * version-managed in an ancestor via a property, it should write the property expression rather
+     * than the resolved literal — preserving the project's version-property conventions.</p>
+     *
+     * <p>Only non-ancestor-managed GAs need this lookup (ancestor-managed deps get no
+     * {@code <version>} element at all). The nearest ancestor wins: the parent POM is consulted
+     * first, then its parent, and so on.</p>
+     */
+    static Map<String, String> buildGaToRawVersionMap(MavenProject proj) {
+        Map<String, String> result = new LinkedHashMap<>();
+        MavenProject current = proj.getParent();
+        while (current != null) {
+            var dm = current.getOriginalModel().getDependencyManagement();
+            if (dm != null && dm.getDependencies() != null) {
+                for (Dependency dep : dm.getDependencies()) {
+                    String classifier = dep.getClassifier();
+                    String ga = (classifier != null && !classifier.isEmpty())
+                            ? dep.getGroupId() + ":" + dep.getArtifactId() + ":" + classifier
+                            : dep.getGroupId() + ":" + dep.getArtifactId();
+                    // putIfAbsent: nearest ancestor wins
+                    result.putIfAbsent(ga, dep.getVersion());
+                }
+            }
+            current = current.getParent();
+        }
+        return result;
+    }
+
     void executeNonInteractive(
             MavenProject proj,
             List<DependenciesTui.DepEntry> declared,
@@ -253,6 +293,17 @@ public class DependenciesMojo extends AbstractMojo {
             List<DependenciesTui.DepEntry> declared,
             List<DependenciesTui.DepEntry> transitive,
             Map<String, String> gaToVersion,
+            Set<String> ancestorManagedGAs)
+            throws Exception {
+        executeNonInteractive(proj, declared, transitive, gaToVersion, Map.of(), ancestorManagedGAs);
+    }
+
+    void executeNonInteractive(
+            MavenProject proj,
+            List<DependenciesTui.DepEntry> declared,
+            List<DependenciesTui.DepEntry> transitive,
+            Map<String, String> gaToVersion,
+            Map<String, String> gaToRawVersion,
             Set<String> ancestorManagedGAs)
             throws Exception {
         List<DependenciesTui.DepEntry> unusedDeclared = new ArrayList<>();
@@ -286,6 +337,7 @@ public class DependenciesMojo extends AbstractMojo {
                         unusedDeclared,
                         usedTransitive,
                         gaToVersion,
+                        gaToRawVersion,
                         ancestorManagedGAs,
                         getLog()::info);
             case "report" -> getLog().warn(DependenciesReporter.formatFindings(unusedDeclared, usedTransitive));

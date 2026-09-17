@@ -371,4 +371,113 @@ class DependenciesReporterTest {
         assertThat(result).doesNotContain("<version>5.0</version>");
         assertThat(result).contains("<dependencies>");
     }
+
+    // -- fix with gaToRawVersion (property expressions) --
+
+    @Test
+    void fixUsesPropertyExpressionFromAncestorDM(@TempDir Path tempDir) throws Exception {
+        // Non-ancestor-managed dep whose ancestor DM version is a property expression
+        Path pomPath = tempDir.resolve("pom.xml");
+        Files.writeString(pomPath, """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>com.example</groupId>
+                      <artifactId>existing</artifactId>
+                      <version>1.0</version>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """);
+
+        var transitive = new DependenciesTui.DepEntry(
+                "org.apache.maven.resolver", "maven-resolver-named-locks", "", "2.0.22", "compile", false);
+        List<String> logs = new ArrayList<>();
+
+        DependenciesReporter.fix(
+                pomPath,
+                List.of(),
+                List.of(transitive),
+                Map.of("org.apache.maven.resolver:maven-resolver-named-locks", "2.0.22"),
+                Map.of("org.apache.maven.resolver:maven-resolver-named-locks", "${resolverVersion}"),
+                Set.of(),
+                logs::add);
+
+        String result = Files.readString(pomPath);
+        assertThat(result).contains("maven-resolver-named-locks");
+        // Must write the property expression, NOT the resolved literal
+        assertThat(result).contains("<version>${resolverVersion}</version>");
+        assertThat(result).doesNotContain("<version>2.0.22</version>");
+    }
+
+    @Test
+    void fixUsesLiteralWhenAncestorDMAlsoUsesLiteral(@TempDir Path tempDir) throws Exception {
+        // Non-ancestor-managed dep whose ancestor DM version is a literal (no property)
+        Path pomPath = tempDir.resolve("pom.xml");
+        Files.writeString(pomPath, """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>com.example</groupId>
+                      <artifactId>existing</artifactId>
+                      <version>1.0</version>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """);
+
+        var transitive = new DependenciesTui.DepEntry("org.other", "plain-lib", "", "3.5", "compile", false);
+        List<String> logs = new ArrayList<>();
+
+        DependenciesReporter.fix(
+                pomPath,
+                List.of(),
+                List.of(transitive),
+                Map.of("org.other:plain-lib", "3.5"),
+                // raw version is also a literal — no property expression
+                Map.of("org.other:plain-lib", "3.5"),
+                Set.of(),
+                logs::add);
+
+        String result = Files.readString(pomPath);
+        assertThat(result).contains("plain-lib");
+        assertThat(result).contains("3.5");
+    }
+
+    @Test
+    void fixAncestorManagedTakesPrecedenceOverRawVersion(@TempDir Path tempDir) throws Exception {
+        // When a dep is ancestor-managed, gaToRawVersion must be ignored — no <version> at all
+        Path pomPath = tempDir.resolve("pom.xml");
+        Files.writeString(pomPath, """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>com.example</groupId>
+                      <artifactId>existing</artifactId>
+                      <version>1.0</version>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """);
+
+        var transitive = new DependenciesTui.DepEntry("org.managed", "managed-lib", "", "4.0", "compile", false);
+        List<String> logs = new ArrayList<>();
+
+        DependenciesReporter.fix(
+                pomPath,
+                List.of(),
+                List.of(transitive),
+                Map.of("org.managed:managed-lib", "4.0"),
+                // raw map also present but must be ignored for ancestor-managed deps
+                Map.of("org.managed:managed-lib", "${managedVersion}"),
+                Set.of("org.managed:managed-lib"),
+                logs::add);
+
+        String result = Files.readString(pomPath);
+        assertThat(result).contains("managed-lib");
+        // Neither the literal nor the property expression should appear — it's ancestor-managed
+        assertThat(result).doesNotContain("<version>4.0</version>");
+        assertThat(result).doesNotContain("<version>${managedVersion}</version>");
+        assertThat(logs).anyMatch(l -> l.contains("version managed by ancestor"));
+    }
 }

@@ -207,6 +207,7 @@ public class AnalyzeDependenciesMojo extends AbstractMojo {
                         unusedDeclared,
                         usedTransitive,
                         gaToVersion,
+                        DependenciesMojo.buildGaToRawVersionMap(proj),
                         DependenciesMojo.buildAncestorManagedGAs(proj),
                         getLog()::info);
             case "report" -> getLog().warn(DependenciesReporter.formatFindings(unusedDeclared, usedTransitive));

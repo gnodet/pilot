@@ -220,4 +220,97 @@ class DependenciesMojoTest {
         // own-lib must NOT appear in ancestorManagedGAs despite the non-normalized path
         assertThat(result).doesNotContain("com.example:own-lib");
     }
+
+    // --- buildGaToRawVersionMap ---
+
+    private static MavenProject projectWithParent(MavenProject parent) {
+        MavenProject proj = new MavenProject();
+        proj.setParent(parent);
+        return proj;
+    }
+
+    private static MavenProject parentWithDM(List<Dependency> deps) {
+        DependencyManagement dm = new DependencyManagement();
+        dm.setDependencies(deps);
+        org.apache.maven.model.Model model = new org.apache.maven.model.Model();
+        model.setDependencyManagement(dm);
+        MavenProject parent = new MavenProject();
+        parent.setOriginalModel(model);
+        return parent;
+    }
+
+    @Test
+    void buildGaToRawVersionMap_emptyWhenNoParent() {
+        MavenProject proj = new MavenProject();
+        assertThat(DependenciesMojo.buildGaToRawVersionMap(proj)).isEmpty();
+    }
+
+    @Test
+    void buildGaToRawVersionMap_propertyExpressionFromParent() {
+        Dependency dep = new Dependency();
+        dep.setGroupId("org.apache.maven.resolver");
+        dep.setArtifactId("maven-resolver-named-locks");
+        dep.setVersion("${resolverVersion}");
+
+        MavenProject parent = parentWithDM(List.of(dep));
+        MavenProject proj = projectWithParent(parent);
+
+        Map<String, String> result = DependenciesMojo.buildGaToRawVersionMap(proj);
+
+        assertThat(result).containsEntry("org.apache.maven.resolver:maven-resolver-named-locks", "${resolverVersion}");
+    }
+
+    @Test
+    void buildGaToRawVersionMap_literalVersionFromParent() {
+        Dependency dep = new Dependency();
+        dep.setGroupId("org.other");
+        dep.setArtifactId("plain-lib");
+        dep.setVersion("3.5");
+
+        MavenProject parent = parentWithDM(List.of(dep));
+        MavenProject proj = projectWithParent(parent);
+
+        Map<String, String> result = DependenciesMojo.buildGaToRawVersionMap(proj);
+
+        assertThat(result).containsEntry("org.other:plain-lib", "3.5");
+    }
+
+    @Test
+    void buildGaToRawVersionMap_nearestAncestorWins() {
+        // Grand-parent declares "${oldVersion}", parent overrides with "${newVersion}"; parent wins.
+        Dependency grandParentDep = new Dependency();
+        grandParentDep.setGroupId("com.example");
+        grandParentDep.setArtifactId("lib");
+        grandParentDep.setVersion("${oldVersion}");
+
+        Dependency parentDep = new Dependency();
+        parentDep.setGroupId("com.example");
+        parentDep.setArtifactId("lib");
+        parentDep.setVersion("${newVersion}");
+
+        MavenProject grandParent = parentWithDM(List.of(grandParentDep));
+        MavenProject parent = parentWithDM(List.of(parentDep));
+        parent.setParent(grandParent);
+        MavenProject proj = projectWithParent(parent);
+
+        Map<String, String> result = DependenciesMojo.buildGaToRawVersionMap(proj);
+
+        assertThat(result).containsEntry("com.example:lib", "${newVersion}");
+    }
+
+    @Test
+    void buildGaToRawVersionMap_classifiedDepIncluded() {
+        Dependency dep = new Dependency();
+        dep.setGroupId("com.example");
+        dep.setArtifactId("lib");
+        dep.setClassifier("tests");
+        dep.setVersion("${testVersion}");
+
+        MavenProject parent = parentWithDM(List.of(dep));
+        MavenProject proj = projectWithParent(parent);
+
+        Map<String, String> result = DependenciesMojo.buildGaToRawVersionMap(proj);
+
+        assertThat(result).containsEntry("com.example:lib:tests", "${testVersion}");
+    }
 }

@@ -131,38 +131,24 @@ public final class DependenciesReporter {
 
             PomEditor editor = new PomEditor(Document.of(pomContent));
 
+            boolean ancestorManaged = ancestorManagedGAs.contains(dep.ga());
+            // null version = ancestor-managed (no <version> emitted); resolved version otherwise
+            String version = ancestorManaged ? null : gaToVersion.getOrDefault(dep.ga(), "");
+            Coordinates coords = (classifier != null && !classifier.isEmpty())
+                    ? Coordinates.of(groupId, artifactId, version, classifier, "jar")
+                    : Coordinates.of(groupId, artifactId, version);
             AlignOptions detected = editor.dependencies().detectConventions();
-
-            if (ancestorManagedGAs.contains(dep.ga())) {
-                // Already managed by an ancestor: add without <version>
-                Coordinates coords = (classifier != null && !classifier.isEmpty())
-                        ? Coordinates.of(groupId, artifactId, null, classifier, "jar")
-                        : Coordinates.of(groupId, artifactId, null);
-                AlignOptions.Builder optBuilder = AlignOptions.builder()
-                        .versionStyle(detected.versionStyle())
-                        .versionSource(detected.versionSource())
-                        .namingConvention(detected.namingConvention());
-                if (scope != null && !scope.isEmpty() && !"compile".equals(scope)) {
-                    optBuilder.scope(scope);
-                }
-                editor.dependencies().addAligned(coords, optBuilder.build());
-                logger.log("Added used transitive dependency (version managed by ancestor): " + dep.ga());
-            } else {
-                // Not ancestor-managed: add with the resolved version
-                String version = gaToVersion.getOrDefault(dep.ga(), "");
-                Coordinates coords = (classifier != null && !classifier.isEmpty())
-                        ? Coordinates.of(groupId, artifactId, version, classifier, "jar")
-                        : Coordinates.of(groupId, artifactId, version);
-                AlignOptions.Builder optBuilder = AlignOptions.builder()
-                        .versionStyle(detected.versionStyle())
-                        .versionSource(detected.versionSource())
-                        .namingConvention(detected.namingConvention());
-                if (scope != null && !scope.isEmpty() && !"compile".equals(scope)) {
-                    optBuilder.scope(scope);
-                }
-                editor.dependencies().addAligned(coords, optBuilder.build());
-                logger.log("Added used transitive dependency: " + dep.ga());
+            AlignOptions.Builder optBuilder = AlignOptions.builder()
+                    .versionStyle(detected.versionStyle())
+                    .versionSource(detected.versionSource())
+                    .namingConvention(detected.namingConvention());
+            if (scope != null && !scope.isEmpty() && !"compile".equals(scope)) {
+                optBuilder.scope(scope);
             }
+            editor.dependencies().addAligned(coords, optBuilder.build());
+            logger.log("Added used transitive dependency"
+                    + (ancestorManaged ? " (version managed by ancestor)" : "")
+                    + ": " + dep.ga());
 
             pomContent = editor.toXml();
         }

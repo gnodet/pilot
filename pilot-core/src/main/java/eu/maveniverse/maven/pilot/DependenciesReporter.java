@@ -116,8 +116,14 @@ public final class DependenciesReporter {
             List<DependenciesTui.DepEntry> unusedDeclared,
             List<DependenciesTui.DepEntry> usedTransitive,
             List<DependenciesTui.DepEntry> undetermined) {
-        return formatFindings(unusedDeclared, usedTransitive, undetermined)
-                + "\nRun with -Dpilot.action=fix to apply changes, or configure allowlists for false positives.";
+        String findings = formatFindings(unusedDeclared, usedTransitive, undetermined);
+        boolean hasRealIssues = !unusedDeclared.isEmpty() || !usedTransitive.isEmpty();
+        if (hasRealIssues) {
+            return findings
+                    + "\nRun with -Dpilot.action=fix to apply changes, or configure allowlists for false positives.";
+        } else {
+            return findings + "\nAnnotate undetermined dependencies with knownUsed or knownUnused to resolve them.";
+        }
     }
 
     /**

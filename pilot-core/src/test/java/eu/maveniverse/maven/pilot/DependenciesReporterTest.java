@@ -181,7 +181,7 @@ class DependenciesReporterTest {
 
         String msg = DependenciesReporter.formatCheckFailure(List.of(), List.of(), List.of(dep));
 
-        assertThat(msg).contains("com.example:mystery").contains("Undetermined").contains("pilot.action=fix");
+        assertThat(msg).contains("com.example:mystery").contains("Undetermined").contains("knownUsed");
     }
 
     // -- fix --

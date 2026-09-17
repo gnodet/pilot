@@ -162,7 +162,7 @@ public class DependenciesMojo extends AbstractMojo {
      * @since 0.4.0
      */
     @Parameter(property = "pilot.failOnUndetermined", defaultValue = "false")
-    boolean failOnUndetermined = false;
+    private boolean failOnUndetermined = false;
 
     private final RepositorySystem repoSystem;
 

@@ -389,6 +389,7 @@ public class DependenciesTui extends ToolPanel {
     public DependenciesTui(
             List<DepEntry> unusedDeclared,
             List<DepEntry> usedTransitive,
+            List<DepEntry> undetermined,
             String projectGav,
             int modulesScanned,
             int modulesSkipped,
@@ -405,13 +406,16 @@ public class DependenciesTui extends ToolPanel {
         this.reactorMode = true;
         this.treeTui = null;
         this.dmTreeTui = null;
-        this.undetermined = List.of();
-        this.views = new View[] {View.UNUSED_DECLARED, View.USED_TRANSITIVE};
+        this.undetermined = undetermined;
+        this.views = undetermined.isEmpty()
+                ? new View[] {View.UNUSED_DECLARED, View.USED_TRANSITIVE}
+                : new View[] {View.UNUSED_DECLARED, View.USED_TRANSITIVE, View.UNDETERMINED};
         this.view = views[0];
         this.sortState = new SortState(sortColumnCount());
         this.status = modulesScanned + " modules scanned"
                 + (modulesSkipped > 0 ? " (" + modulesSkipped + " skipped — not compiled)" : "") + ", "
-                + unusedDeclared.size() + " unused declared, " + usedTransitive.size() + " used transitive";
+                + unusedDeclared.size() + " unused declared, " + usedTransitive.size() + " used transitive"
+                + (undetermined.isEmpty() ? "" : ", " + undetermined.size() + " undetermined");
         if (!unusedDeclared.isEmpty()) {
             tableState.select(0);
         }

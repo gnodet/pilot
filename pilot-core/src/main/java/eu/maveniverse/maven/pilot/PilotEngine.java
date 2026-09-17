@@ -188,6 +188,7 @@ public class PilotEngine {
             throws Exception {
         Map<String, DependenciesTui.DepEntry> unusedMap = new LinkedHashMap<>();
         Map<String, DependenciesTui.DepEntry> usedTransMap = new LinkedHashMap<>();
+        Map<String, DependenciesTui.DepEntry> undeterminedMap = new LinkedHashMap<>();
         int modulesScanned = 0;
         int modulesSkipped = 0;
 
@@ -198,7 +199,7 @@ public class PilotEngine {
             }
             modulesScanned++;
             progress.accept("Analyzing dependencies… " + modulesScanned + "/" + projects.size() + "\n" + p.artifactId);
-            analyzeModuleUsage(p, unusedMap, usedTransMap);
+            analyzeModuleUsage(p, unusedMap, usedTransMap, undeterminedMap);
         }
 
         PilotProject mgmtProject = findManagementPom(projects);
@@ -206,6 +207,7 @@ public class PilotEngine {
         return new DependenciesTui(
                 new ArrayList<>(unusedMap.values()),
                 new ArrayList<>(usedTransMap.values()),
+                new ArrayList<>(undeterminedMap.values()),
                 reactorGav(projects),
                 modulesScanned,
                 modulesSkipped,
@@ -216,7 +218,8 @@ public class PilotEngine {
     private void analyzeModuleUsage(
             PilotProject p,
             Map<String, DependenciesTui.DepEntry> unusedMap,
-            Map<String, DependenciesTui.DepEntry> usedTransMap)
+            Map<String, DependenciesTui.DepEntry> usedTransMap,
+            Map<String, DependenciesTui.DepEntry> undeterminedMap)
             throws Exception {
         Set<String> declaredGAs = new HashSet<>();
         List<DependenciesTui.DepEntry> declared = new ArrayList<>();
@@ -267,6 +270,15 @@ public class PilotEngine {
                 usedTransMap,
                 p.artifactId,
                 p.pomPath);
+        if (undeterminedMap != null) {
+            accumulateEntries(
+                    declared,
+                    usage.declaredUsage(),
+                    DependencyUsageAnalyzer.UsageStatus.UNDETERMINED,
+                    undeterminedMap,
+                    p.artifactId,
+                    p.pomPath);
+        }
     }
 
     private static void accumulateEntries(

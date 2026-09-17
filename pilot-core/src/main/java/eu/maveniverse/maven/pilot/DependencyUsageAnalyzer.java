@@ -56,6 +56,7 @@ public final class DependencyUsageAnalyzer {
 
     private static final String META_INF_SERVICES = "META-INF/services/";
     private static final String META_INF_SISU = "META-INF/sisu/";
+    private static final String META_INF_MAVEN_DI = "META-INF/maven/";
     private static final Set<String> TEST_SCOPES = Set.of("test", "test-only", "test-runtime");
 
     public enum UsageStatus {
@@ -173,8 +174,9 @@ public final class DependencyUsageAnalyzer {
             return UsageStatus.USED;
         }
 
-        if (isUsedByRuntimeDiscovery(dep, gaToJar, refs)) {
-            return UsageStatus.USED;
+        UsageStatus discoveryStatus = classifyByRuntimeDiscovery(dep, gaToJar, refs);
+        if (discoveryStatus != null) {
+            return discoveryStatus;
         }
 
         if (matchesArtifactPattern(dep.ga(), annotationOnlyArtifacts)
@@ -186,20 +188,134 @@ public final class DependencyUsageAnalyzer {
         return depClasses == null ? UsageStatus.UNDETERMINED : UsageStatus.UNUSED;
     }
 
-    private static boolean isUsedByRuntimeDiscovery(
+    /**
+     * Classify a dependency based on runtime-discovery metadata (ServiceLoader, Sisu, Maven DI).
+     *
+     * <p>Returns:</p>
+     * <ul>
+     *   <li>{@link UsageStatus#USED} — the dep's registered service interface is directly
+     *       referenced by the consuming module's bytecode, or it is an annotation processor.</li>
+     *   <li>{@link UsageStatus#UNDETERMINED} — the dep's JAR contains DI/SPI registration
+     *       metadata (Maven DI, Sisu) but its wiring interface is not in the consumer's
+     *       bytecode. The DI container resolves these at runtime without direct class
+     *       references, so we cannot determine usage from bytecode alone.</li>
+     *   <li>{@code null} — the dep has no runtime-discovery metadata; caller decides.</li>
+     * </ul>
+     */
+    private static UsageStatus classifyByRuntimeDiscovery(
             DependenciesTui.DepEntry dep, Map<String, File> gaToJar, Set<String> refs) {
         File jarFile = gaToJar.get(dep.ga());
         if (jarFile == null) {
-            return false;
+            return null;
         }
-        Set<String> discoveryClasses = getRuntimeDiscoveryClasses(jarFile);
-        if (!Collections.disjoint(discoveryClasses, refs)) {
-            return true;
+        DiscoveryInfo info = scanDiscoveryMetadata(jarFile);
+        if (!info.hasDiMetadata()) {
+            return null;
+        }
+        // If the consumer directly references the registered service interface, it's clearly used.
+        if (!Collections.disjoint(info.discoveryClasses(), refs)) {
+            return UsageStatus.USED;
         }
         // Annotation processors are used at compile time without direct bytecode references.
         // They can be declared with "provided" or "compile" scope (e.g. Lombok).
-        return ("provided".equals(dep.scope) || "compile".equals(dep.scope))
-                && discoveryClasses.contains("javax.annotation.processing.Processor");
+        if (("provided".equals(dep.scope) || "compile".equals(dep.scope))
+                && info.discoveryClasses().contains("javax.annotation.processing.Processor")) {
+            return UsageStatus.USED;
+        }
+        // The dep has DI/SPI registration but the consumer doesn't directly reference
+        // the wiring interface. DI containers (Sisu/Guice, Maven DI) resolve implementations
+        // by scanning the index at runtime — there is no bytecode reference in the consumer.
+        // We cannot determine from bytecode alone whether the dep is actually needed.
+        if (info.hasMavenDiOrSisu()) {
+            return UsageStatus.UNDETERMINED;
+        }
+        return null;
+    }
+
+    /**
+     * Result of a single JAR scan for runtime-discovery metadata.
+     *
+     * @param discoveryClasses class names used as service/DI wiring keys
+     * @param hasMavenDiOrSisu {@code true} if the JAR has a Maven DI or Sisu index
+     */
+    record DiscoveryInfo(Set<String> discoveryClasses, boolean hasMavenDiOrSisu) {
+        boolean hasDiMetadata() {
+            return !discoveryClasses.isEmpty();
+        }
+    }
+
+    /**
+     * Returns {@code true} if the JAR contains a Maven DI index
+     * ({@code META-INF/maven/<annotation-fqn>}) or a Sisu index
+     * ({@code META-INF/sisu/<annotation-fqn>}).
+     *
+     * <p>These index files are written at build time by the Sisu Maven plugin and the
+     * Maven DI compiler plugin. At runtime the DI container reads them to discover
+     * injectable components without any direct bytecode reference in the consuming module.</p>
+     */
+    @SuppressWarnings("java:S5042") // JARs are from Maven's local repository, already verified
+    static boolean hasMavenDiOrSisuRegistration(File jarFile) {
+        return scanDiscoveryMetadata(jarFile).hasMavenDiOrSisu();
+    }
+
+    /**
+     * Scan a JAR for all runtime-discovery metadata in a single pass.
+     */
+    @SuppressWarnings("java:S5042") // JARs are from Maven's local repository, already verified
+    private static DiscoveryInfo scanDiscoveryMetadata(File jarFile) {
+        Set<String> classes = new HashSet<>();
+        boolean hasMavenDiOrSisu = false;
+        try (JarFile jar = new JarFile(jarFile)) {
+            Enumeration<JarEntry> entries = jar.entries();
+            while (entries.hasMoreElements()) {
+                String name = entries.nextElement().getName();
+                if (isSisuEntry(name)) {
+                    classes.add(name.substring(META_INF_SISU.length()));
+                    hasMavenDiOrSisu = true;
+                } else if (isMavenDiEntry(name)) {
+                    classes.add(name.substring(META_INF_MAVEN_DI.length()));
+                    hasMavenDiOrSisu = true;
+                } else {
+                    addIfServiceEntry(name, META_INF_SERVICES, classes);
+                }
+            }
+            // Spring component index: META-INF/spring.components
+            if (jar.getEntry("META-INF/spring.components") != null) {
+                classes.add("org.springframework.stereotype.Component");
+            }
+            // Spring Boot auto-configuration
+            if (jar.getEntry("META-INF/spring.factories") != null
+                    || jar.getEntry("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
+                            != null) {
+                classes.add("org.springframework.boot.autoconfigure.EnableAutoConfiguration");
+            }
+        } catch (IOException ignored) {
+            // skip unreadable JARs
+        }
+        return new DiscoveryInfo(classes, hasMavenDiOrSisu);
+    }
+
+    /**
+     * Returns {@code true} for a {@code META-INF/maven/<fqn>} entry where {@code <fqn>}
+     * is a flat class name (no further slashes), distinguishing DI index files from
+     * the standard Maven POM metadata ({@code META-INF/maven/<groupId>/<artifactId>/...}).
+     */
+    private static boolean isMavenDiEntry(String name) {
+        if (!name.startsWith(META_INF_MAVEN_DI) || name.equals(META_INF_MAVEN_DI)) {
+            return false;
+        }
+        String remainder = name.substring(META_INF_MAVEN_DI.length());
+        // DI index: flat file (no sub-path), e.g. "org.apache.maven.api.di.Inject"
+        // POM metadata: "org.apache.maven/maven-jline/pom.xml" (contains '/')
+        return !remainder.contains("/") && !remainder.isEmpty();
+    }
+
+    private static boolean isSisuEntry(String name) {
+        if (!name.startsWith(META_INF_SISU) || name.equals(META_INF_SISU)) {
+            return false;
+        }
+        String remainder = name.substring(META_INF_SISU.length());
+        return !remainder.contains("/") && !remainder.isEmpty();
     }
 
     private boolean matchesReflectionLoadedClasses(String ga, Set<String> depClasses) {
@@ -249,38 +365,18 @@ public final class DependencyUsageAnalyzer {
     /**
      * Extract class names used for runtime discovery from a JAR.
      *
-     * <p>Covers three conventions:</p>
+     * <p>Covers four conventions:</p>
      * <ul>
      *   <li><b>ServiceLoader</b>: {@code META-INF/services/<interface>}</li>
      *   <li><b>Sisu/JSR-330</b>: {@code META-INF/sisu/<annotation>}</li>
+     *   <li><b>Maven DI</b>: {@code META-INF/maven/<annotation>} (flat file, not the POM metadata
+     *       at {@code META-INF/maven/<groupId>/<artifactId>/...})</li>
      *   <li><b>Spring</b>: {@code META-INF/spring.components} and {@code META-INF/spring.factories}
      *       — reads the keys/values to extract referenced class names</li>
      * </ul>
      */
-    @SuppressWarnings("java:S5042") // JARs are from Maven's local repository, already verified
     public static Set<String> getRuntimeDiscoveryClasses(File jarFile) {
-        Set<String> classes = new HashSet<>();
-        try (JarFile jar = new JarFile(jarFile)) {
-            Enumeration<JarEntry> entries = jar.entries();
-            while (entries.hasMoreElements()) {
-                String name = entries.nextElement().getName();
-                addIfServiceEntry(name, META_INF_SERVICES, classes);
-                addIfServiceEntry(name, META_INF_SISU, classes);
-            }
-            // Spring component index: META-INF/spring.components
-            if (jar.getEntry("META-INF/spring.components") != null) {
-                classes.add("org.springframework.stereotype.Component");
-            }
-            // Spring Boot auto-configuration
-            if (jar.getEntry("META-INF/spring.factories") != null
-                    || jar.getEntry("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
-                            != null) {
-                classes.add("org.springframework.boot.autoconfigure.EnableAutoConfiguration");
-            }
-        } catch (IOException ignored) {
-            // skip unreadable JARs
-        }
-        return classes;
+        return scanDiscoveryMetadata(jarFile).discoveryClasses();
     }
 
     private static void addIfServiceEntry(String name, String prefix, Set<String> classes) {

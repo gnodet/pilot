@@ -561,4 +561,102 @@ class DependencyUsageAnalyzerTest {
         assertThat(DependencyUsageAnalyzer.matchesArtifactPattern("com.example:lib", Set.of()))
                 .isFalse();
     }
+
+    @Test
+    void mavenDiRegistrationWithoutBytecodeRefIsUndetermined(@TempDir Path tempDir) throws Exception {
+        // maven-jline scenario: provides DI-registered components via META-INF/maven/<annotation>
+        // but the consuming module has no direct bytecode reference to the DI annotation
+        Path tempJar = tempDir.resolve("maven-jline.jar");
+        createJarWithEntries(tempJar, "META-INF/maven/org.apache.maven.api.di.Inject");
+
+        var dep = new DependenciesTui.DepEntry("org.apache.maven", "maven-jline", "", "4.0", "compile", true);
+        Map<String, File> gaToJar = Map.of("org.apache.maven:maven-jline", tempJar.toFile());
+        Map<String, String> classIndex =
+                Map.of("org.apache.maven.jline.DefaultPrompter", "org.apache.maven:maven-jline");
+
+        // Consumer does not reference "org.apache.maven.api.di.Inject" or any maven-jline class
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(
+                        Set.of("org.apache.maven.impl.SomeOtherClass"),
+                        Set.of(),
+                        classIndex,
+                        gaToJar,
+                        List.of(dep),
+                        List.of());
+
+        // Should be UNDETERMINED, not UNUSED — DI container wires at runtime, not via bytecode
+        assertThat(result.declaredUsage())
+                .containsEntry("org.apache.maven:maven-jline", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
+    @Test
+    void sisuRegistrationWithoutBytecodeRefIsUndetermined(@TempDir Path tempDir) throws Exception {
+        // Sisu/JSR-330 scenario: dep registers components via META-INF/sisu/<annotation>
+        // but the consuming module does not reference the sisu annotation directly
+        Path tempJar = tempDir.resolve("sisu-component.jar");
+        createJarWithEntries(tempJar, "META-INF/sisu/javax.inject.Named");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "sisu-component", "", "1.0", "compile", true);
+        Map<String, File> gaToJar = Map.of("com.example:sisu-component", tempJar.toFile());
+        Map<String, String> classIndex = Map.of("com.example.MyComponent", "com.example:sisu-component");
+
+        // Consumer does not reference "javax.inject.Named" or any component class
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(Set.of("com.other.Unrelated"), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+
+        assertThat(result.declaredUsage())
+                .containsEntry("com.example:sisu-component", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
+    @Test
+    void mavenDiRegistrationWithBytecodeRefIsUsed(@TempDir Path tempDir) throws Exception {
+        // If the consumer does reference the DI annotation directly, classify as USED
+        Path tempJar = tempDir.resolve("maven-di.jar");
+        createJarWithEntries(tempJar, "META-INF/maven/org.apache.maven.api.di.Inject");
+
+        var dep = new DependenciesTui.DepEntry("org.apache.maven", "maven-di", "", "4.0", "compile", true);
+        Map<String, File> gaToJar = Map.of("org.apache.maven:maven-di", tempJar.toFile());
+        Map<String, String> classIndex = Map.of();
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(
+                        Set.of("org.apache.maven.api.di.Inject"),
+                        Set.of(),
+                        classIndex,
+                        gaToJar,
+                        List.of(dep),
+                        List.of());
+
+        assertThat(result.declaredUsage())
+                .containsEntry("org.apache.maven:maven-di", DependencyUsageAnalyzer.UsageStatus.USED);
+    }
+
+    @Test
+    void mavenDiEntryDetectedByHasMavenDiOrSisu(@TempDir Path tempDir) throws Exception {
+        Path tempJar = tempDir.resolve("maven-di.jar");
+        createJarWithEntries(tempJar, "META-INF/maven/org.apache.maven.api.di.Inject");
+        assertThat(DependencyUsageAnalyzer.hasMavenDiOrSisuRegistration(tempJar.toFile()))
+                .isTrue();
+    }
+
+    @Test
+    void pomMetadataEntryNotMistokenForMavenDi(@TempDir Path tempDir) throws Exception {
+        // META-INF/maven/org.apache.maven/maven-jline/pom.xml is POM metadata, not a DI index
+        Path tempJar = tempDir.resolve("regular.jar");
+        createJarWithEntries(tempJar, "META-INF/maven/org.apache.maven/maven-jline/pom.xml");
+        assertThat(DependencyUsageAnalyzer.hasMavenDiOrSisuRegistration(tempJar.toFile()))
+                .isFalse();
+    }
+
+    @Test
+    void mavenDiIncludedInRuntimeDiscoveryClasses(@TempDir Path tempDir) throws Exception {
+        Path tempJar = tempDir.resolve("maven-di.jar");
+        createJarWithEntries(tempJar, "META-INF/maven/org.apache.maven.api.di.Inject");
+
+        Set<String> classes = DependencyUsageAnalyzer.getRuntimeDiscoveryClasses(tempJar.toFile());
+        assertThat(classes).contains("org.apache.maven.api.di.Inject");
+    }
 }

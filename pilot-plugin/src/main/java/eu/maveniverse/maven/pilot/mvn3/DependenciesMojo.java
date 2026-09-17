@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
 import org.apache.maven.model.Dependency;
+import org.apache.maven.model.InputLocation;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -205,38 +206,28 @@ public class DependenciesMojo extends AbstractMojo {
      * import, so omitting {@code <version>} is correct as long as the import remains present.</p>
      */
     static Set<String> buildAncestorManagedGAs(MavenProject proj) {
-        // Collect GAs declared in this module's own <dependencyManagement> section (raw, unmerged).
-        // getOriginalModel() returns only this POM's own declarations, without parent inheritance —
-        // that is exactly what we want to exclude from the ancestor-managed set.
-        Set<String> ownManagedGAs = new HashSet<>();
-        if (proj.getOriginalModel().getDependencyManagement() != null
-                && proj.getOriginalModel().getDependencyManagement().getDependencies() != null) {
-            for (Dependency dep :
-                    proj.getOriginalModel().getDependencyManagement().getDependencies()) {
+        // Use the effective (merged) model and filter by InputLocation source to distinguish
+        // entries declared in this module's own POM from those inherited from ancestors.
+        // InputLocation.getSource().getLocation() resolves to the physical POM file path,
+        // so entries whose source matches proj.getFile() are own-managed; all others are
+        // ancestor-managed. This works correctly even when the module's own DM entries use
+        // property expressions, because we compare file paths, not resolved GA strings.
+        String ownPomPath = proj.getFile().toPath().normalize().toString();
+
+        Set<String> ancestorManagedGAs = new HashSet<>();
+        if (proj.getModel().getDependencyManagement() == null
+                || proj.getModel().getDependencyManagement().getDependencies() == null) {
+            return ancestorManagedGAs;
+        }
+        for (Dependency dep : proj.getModel().getDependencyManagement().getDependencies()) {
+            InputLocation loc = dep.getLocation("");
+            String sourcePath =
+                    (loc != null && loc.getSource() != null) ? loc.getSource().getLocation() : null;
+            if (sourcePath == null || !sourcePath.equals(ownPomPath)) {
                 String classifier = dep.getClassifier();
                 String ga = (classifier != null && !classifier.isEmpty())
                         ? dep.getGroupId() + ":" + dep.getArtifactId() + ":" + classifier
                         : dep.getGroupId() + ":" + dep.getArtifactId();
-                ownManagedGAs.add(ga);
-            }
-        }
-
-        // getManagedVersionMap() returns the full effective managed-version map (own + inherited),
-        // with keys in the form "groupId:artifactId:type[:classifier]".
-        // Any entry not covered by this module's own DM section is ancestor-managed.
-        Set<String> ancestorManagedGAs = new HashSet<>();
-        for (String artifactKey : proj.getManagedVersionMap().keySet()) {
-            // Artifact key format: groupId:artifactId:type[:classifier]
-            String[] parts = artifactKey.split(":");
-            if (parts.length < 3) continue;
-            String groupId = parts[0];
-            String artifactId = parts[1];
-            // type is parts[2]; classifier is parts[3] if present
-            String classifier = parts.length > 3 ? parts[3] : null;
-            String ga = (classifier != null && !classifier.isEmpty())
-                    ? groupId + ":" + artifactId + ":" + classifier
-                    : groupId + ":" + artifactId;
-            if (!ownManagedGAs.contains(ga)) {
                 ancestorManagedGAs.add(ga);
             }
         }

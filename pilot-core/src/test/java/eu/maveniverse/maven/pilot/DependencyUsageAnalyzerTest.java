@@ -209,9 +209,7 @@ class DependencyUsageAnalyzerTest {
                 tempJar,
                 "com/example/Foo.class",
                 "com/example/Bar.class",
-                "module-info.class", // should
-                // be
-                // excluded
+                "module-info.class", // should be excluded
                 "META-INF/versions/17/com/example/Foo.class"); // should be excluded
 
         Map<String, File> gaToJar = new HashMap<>();

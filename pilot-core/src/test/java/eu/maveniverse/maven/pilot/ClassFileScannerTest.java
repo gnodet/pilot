@@ -22,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,9 +31,8 @@ class ClassFileScannerTest {
     @Test
     void scanDirectoryFindsClasses() throws Exception {
         Path testClasses = Path.of("target/test-classes");
-        if (!Files.isDirectory(testClasses)) {
-            return;
-        }
+        Assumptions.assumeTrue(
+                Files.isDirectory(testClasses), "target/test-classes not found — skipping bytecode scan test");
 
         ClassFileScanner.ScanResult result = ClassFileScanner.scanDirectory(testClasses);
 
@@ -43,9 +43,8 @@ class ClassFileScannerTest {
     @Test
     void scanDirectoryFindsMemberReferences() throws Exception {
         Path testClasses = Path.of("target/test-classes");
-        if (!Files.isDirectory(testClasses)) {
-            return;
-        }
+        Assumptions.assumeTrue(
+                Files.isDirectory(testClasses), "target/test-classes not found — skipping bytecode scan test");
 
         ClassFileScanner.ScanResult result = ClassFileScanner.scanDirectory(testClasses);
 
@@ -65,9 +64,8 @@ class ClassFileScannerTest {
     @Test
     void referencedClassesFiltersArrayDescriptors() throws Exception {
         Path mainClasses = Path.of("target/classes");
-        if (!Files.isDirectory(mainClasses)) {
-            return;
-        }
+        Assumptions.assumeTrue(
+                Files.isDirectory(mainClasses), "target/classes not found — skipping bytecode scan test");
 
         ClassFileScanner.ScanResult result = ClassFileScanner.scanDirectory(mainClasses);
 
@@ -84,5 +82,46 @@ class ClassFileScannerTest {
         assertThat(ClassFileScanner.formatDescriptor("(Ljava/lang/String;)V")).isEqualTo("(String)");
         assertThat(ClassFileScanner.formatDescriptor("(Ljava/lang/String;I)Z")).isEqualTo("(String, int)");
         assertThat(ClassFileScanner.formatDescriptor("([Ljava/lang/Object;)V")).isEqualTo("(Object[])");
+    }
+
+    /**
+     * Regression test for <a href="https://github.com/maveniverse/pilot/issues/158">issue #158</a>:
+     * the bytecode scanner must detect annotation types used only as annotations (not appearing in
+     * method/field descriptors or call sites).
+     *
+     * <p>Specifically verifies:
+     * <ul>
+     *   <li>Method-level annotation types are collected ({@code @Test} on methods in this class)</li>
+     *   <li>Field-level annotation types are collected ({@link org.junit.jupiter.api.io.TempDir}
+     *       on a field in {@link AnnotationFixture}) — tests {@code FieldVisitor.visitAnnotation}</li>
+     *   <li>Annotation element {@code Class[]} literals are collected
+     *       ({@link AnnotationFixture.NoopExtension} referenced as the value of {@code @ExtendWith}
+     *       on {@link AnnotationFixture}) — tests {@code annotationScanner().visit(name, Type)} +
+     *       {@code visitArray}</li>
+     * </ul>
+     */
+    @Test
+    void scanDetectsAnnotationOnlyDependencies() throws Exception {
+        Path testClasses = Path.of("target/test-classes");
+        Assumptions.assumeTrue(
+                Files.isDirectory(testClasses), "target/test-classes not found — skipping bytecode scan test");
+
+        ClassFileScanner.ScanResult result = ClassFileScanner.scanDirectory(testClasses);
+
+        // @Test is a method-level annotation used in many test classes — must be detected
+        assertThat(result.referencedClasses())
+                .as("method-level annotation type @Test must be detected")
+                .contains("org.junit.jupiter.api.Test");
+
+        // @TempDir is used as a field annotation in AnnotationFixture — tests the field-annotation path
+        assertThat(result.referencedClasses())
+                .as("field-level annotation type @TempDir must be detected (regression: issue #158)")
+                .contains("org.junit.jupiter.api.io.TempDir");
+
+        // NoopExtension is a Class<?> literal in @ExtendWith(NoopExtension.class) on AnnotationFixture
+        // — tests the annotation element-value scanning path (visitArray + visit(name, Type))
+        assertThat(result.referencedClasses())
+                .as("Class[] annotation element value must be detected (regression: issue #158)")
+                .contains("eu.maveniverse.maven.pilot.AnnotationFixture$NoopExtension");
     }
 }

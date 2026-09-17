@@ -121,13 +121,19 @@ public final class ClassFileScanner {
         @Override
         public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
             addDescriptorRefs(descriptor);
-            return null;
+            return annotationScanner();
         }
 
         @Override
         public FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
             addDescriptorRefs(descriptor);
-            return null;
+            return new FieldVisitor(Opcodes.ASM9) {
+                @Override
+                public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
+                    addDescriptorRefs(descriptor);
+                    return annotationScanner();
+                }
+            };
         }
 
         @Override
@@ -172,7 +178,13 @@ public final class ClassFileScanner {
                 @Override
                 public AnnotationVisitor visitAnnotation(String descriptor, boolean visible) {
                     addDescriptorRefs(descriptor);
-                    return null;
+                    return annotationScanner();
+                }
+
+                @Override
+                public AnnotationVisitor visitParameterAnnotation(int parameter, String descriptor, boolean visible) {
+                    addDescriptorRefs(descriptor);
+                    return annotationScanner();
                 }
 
                 @Override
@@ -180,6 +192,39 @@ public final class ClassFileScanner {
                     if (value instanceof Type t) {
                         addClassRef(t.getInternalName());
                     }
+                }
+            };
+        }
+
+        /**
+         * Returns an {@link AnnotationVisitor} that collects class references from annotation element
+         * values: {@code Class} literals ({@link AnnotationVisitor#visit} with a {@link Type} value),
+         * nested annotations ({@link AnnotationVisitor#visitAnnotation}), and enum constants
+         * ({@link AnnotationVisitor#visitEnum}).
+         */
+        private AnnotationVisitor annotationScanner() {
+            return new AnnotationVisitor(Opcodes.ASM9) {
+                @Override
+                public void visit(String name, Object value) {
+                    if (value instanceof Type t) {
+                        addClassRef(t.getInternalName());
+                    }
+                }
+
+                @Override
+                public void visitEnum(String name, String descriptor, String value) {
+                    addDescriptorRefs(descriptor);
+                }
+
+                @Override
+                public AnnotationVisitor visitAnnotation(String name, String descriptor) {
+                    addDescriptorRefs(descriptor);
+                    return this;
+                }
+
+                @Override
+                public AnnotationVisitor visitArray(String name) {
+                    return this;
                 }
             };
         }

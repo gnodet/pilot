@@ -292,7 +292,7 @@ public final class DependencyUsageAnalyzer {
         } catch (IOException ignored) {
             // skip unreadable JARs
         }
-        return new DiscoveryInfo(classes, hasMavenDiOrSisu);
+        return new DiscoveryInfo(Set.copyOf(classes), hasMavenDiOrSisu);
     }
 
     /**

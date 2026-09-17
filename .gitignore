@@ -8,5 +8,3 @@ dependency-reduced-pom.xml
 .omc/
 docs/videos/
 docs/recordings/
-*.versionsBackup
-.inlined-pom.xml*

@@ -131,12 +131,17 @@ public final class DependenciesReporter {
 
             PomEditor editor = new PomEditor(Document.of(pomContent));
 
+            AlignOptions detected = editor.dependencies().detectConventions();
+
             if (ancestorManagedGAs.contains(dep.ga())) {
                 // Already managed by an ancestor: add without <version>
                 Coordinates coords = (classifier != null && !classifier.isEmpty())
                         ? Coordinates.of(groupId, artifactId, null, classifier, "jar")
                         : Coordinates.of(groupId, artifactId, null);
-                AlignOptions.Builder optBuilder = AlignOptions.builder();
+                AlignOptions.Builder optBuilder = AlignOptions.builder()
+                        .versionStyle(detected.versionStyle())
+                        .versionSource(detected.versionSource())
+                        .namingConvention(detected.namingConvention());
                 if (scope != null && !scope.isEmpty() && !"compile".equals(scope)) {
                     optBuilder.scope(scope);
                 }
@@ -148,7 +153,6 @@ public final class DependenciesReporter {
                 Coordinates coords = (classifier != null && !classifier.isEmpty())
                         ? Coordinates.of(groupId, artifactId, version, classifier, "jar")
                         : Coordinates.of(groupId, artifactId, version);
-                AlignOptions detected = editor.dependencies().detectConventions();
                 AlignOptions.Builder optBuilder = AlignOptions.builder()
                         .versionStyle(detected.versionStyle())
                         .versionSource(detected.versionSource())

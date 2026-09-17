@@ -207,10 +207,9 @@ public class DependenciesMojo extends AbstractMojo {
     static Set<String> buildAncestorManagedGAs(MavenProject proj) {
         // Collect GAs declared in this module's own <dependencyManagement>
         Set<String> ownManagedGAs = new HashSet<>();
-        if (proj.getOriginalModel().getDependencyManagement() != null
-                && proj.getOriginalModel().getDependencyManagement().getDependencies() != null) {
-            for (Dependency dep :
-                    proj.getOriginalModel().getDependencyManagement().getDependencies()) {
+        if (proj.getModel().getDependencyManagement() != null
+                && proj.getModel().getDependencyManagement().getDependencies() != null) {
+            for (Dependency dep : proj.getModel().getDependencyManagement().getDependencies()) {
                 String classifier = dep.getClassifier();
                 String ga = (classifier != null && !classifier.isEmpty())
                         ? dep.getGroupId() + ":" + dep.getArtifactId() + ":" + classifier

@@ -30,6 +30,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.inject.Inject;
 import org.apache.maven.model.Dependency;
+import org.apache.maven.model.InputLocation;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
@@ -157,6 +158,11 @@ public class DependenciesMojo extends AbstractMojo {
             }
         }
 
+        // Build set of GAs already managed by an ancestor BOM/parent POM (not by this module itself).
+        // When a transitive dependency is already version-managed by an ancestor, the fix action
+        // should add it without a <version> element rather than hardcoding the resolved literal.
+        Set<String> ancestorManagedGAs = buildAncestorManagedGAs(proj);
+
         Path classesDir = Path.of(proj.getBuild().getOutputDirectory());
         Path testClassesDir = Path.of(proj.getBuild().getTestOutputDirectory());
 
@@ -183,7 +189,54 @@ public class DependenciesMojo extends AbstractMojo {
                     "target/classes not found — run 'mvn compile' before dependencies report/check/fix.");
         }
 
-        executeNonInteractive(proj, declared, transitive, gaToVersion);
+        executeNonInteractive(proj, declared, transitive, gaToVersion, ancestorManagedGAs);
+    }
+
+    /**
+     * Computes the set of {@code groupId:artifactId} keys that are version-managed by an ancestor
+     * POM or imported BOM, but <em>not</em> declared in this module's own {@code
+     * <dependencyManagement>} section.
+     *
+     * <p>When a used-transitive dependency is already managed by an ancestor, the fix action
+     * should add it to {@code <dependencies>} without a {@code <version>} element.</p>
+     *
+     * <p>Note: dependencies provided by a BOM that is <em>imported</em> in this module's own
+     * {@code <dependencyManagement>} (via {@code <scope>import</scope>}) are classified as
+     * ancestor-managed. This is intentional — those dependencies are version-pinned by the BOM
+     * import, so omitting {@code <version>} is correct as long as the import remains present.</p>
+     */
+    static Set<String> buildAncestorManagedGAs(MavenProject proj) {
+        // Use the effective (merged) model and filter by InputLocation source to distinguish
+        // entries declared in this module's own POM from those inherited from ancestors.
+        // InputLocation.getSource().getLocation() resolves to the physical POM file path,
+        // so entries whose source matches proj.getFile() are own-managed; all others are
+        // ancestor-managed. This works correctly even when the module's own DM entries use
+        // property expressions, because we compare file paths, not resolved GA strings.
+        String ownPomPath = proj.getFile().toPath().normalize().toString();
+
+        Set<String> ancestorManagedGAs = new HashSet<>();
+        if (proj.getModel().getDependencyManagement() == null
+                || proj.getModel().getDependencyManagement().getDependencies() == null) {
+            return ancestorManagedGAs;
+        }
+        for (Dependency dep : proj.getModel().getDependencyManagement().getDependencies()) {
+            InputLocation loc = dep.getLocation("");
+            String rawSourcePath =
+                    (loc != null && loc.getSource() != null) ? loc.getSource().getLocation() : null;
+            // Normalize local file paths (which may contain "." or "..") before comparison.
+            // URL-style locations (containing "://") are left unchanged; they cannot match a local path.
+            String sourcePath = (rawSourcePath != null && !rawSourcePath.contains("://"))
+                    ? Path.of(rawSourcePath).normalize().toString()
+                    : rawSourcePath;
+            if (sourcePath == null || !sourcePath.equals(ownPomPath)) {
+                String classifier = dep.getClassifier();
+                String ga = (classifier != null && !classifier.isEmpty())
+                        ? dep.getGroupId() + ":" + dep.getArtifactId() + ":" + classifier
+                        : dep.getGroupId() + ":" + dep.getArtifactId();
+                ancestorManagedGAs.add(ga);
+            }
+        }
+        return ancestorManagedGAs;
     }
 
     void executeNonInteractive(
@@ -191,6 +244,16 @@ public class DependenciesMojo extends AbstractMojo {
             List<DependenciesTui.DepEntry> declared,
             List<DependenciesTui.DepEntry> transitive,
             Map<String, String> gaToVersion)
+            throws Exception {
+        executeNonInteractive(proj, declared, transitive, gaToVersion, Set.of());
+    }
+
+    void executeNonInteractive(
+            MavenProject proj,
+            List<DependenciesTui.DepEntry> declared,
+            List<DependenciesTui.DepEntry> transitive,
+            Map<String, String> gaToVersion,
+            Set<String> ancestorManagedGAs)
             throws Exception {
         List<DependenciesTui.DepEntry> unusedDeclared = new ArrayList<>();
         for (var dep : declared) {
@@ -219,7 +282,12 @@ public class DependenciesMojo extends AbstractMojo {
         switch (action) {
             case "fix" ->
                 DependenciesReporter.fix(
-                        proj.getFile().toPath(), unusedDeclared, usedTransitive, gaToVersion, getLog()::info);
+                        proj.getFile().toPath(),
+                        unusedDeclared,
+                        usedTransitive,
+                        gaToVersion,
+                        ancestorManagedGAs,
+                        getLog()::info);
             case "report" -> getLog().warn(DependenciesReporter.formatFindings(unusedDeclared, usedTransitive));
             default ->
                 throw new MojoFailureException(DependenciesReporter.formatCheckFailure(unusedDeclared, usedTransitive));

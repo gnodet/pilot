@@ -25,6 +25,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -238,5 +239,136 @@ class DependenciesReporterTest {
         String result = Files.readString(pomPath);
         assertThat(result).doesNotContain("com.example").contains("needed");
         assertThat(logs).hasSize(3); // remove + add + updated
+    }
+
+    // -- fix with ancestorManagedGAs --
+
+    @Test
+    void fixAncestorManagedOmitsVersion(@TempDir Path tempDir) throws Exception {
+        Path pomPath = tempDir.resolve("pom.xml");
+        Files.writeString(pomPath, """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>com.example</groupId>
+                      <artifactId>existing</artifactId>
+                      <version>1.0</version>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """);
+
+        var transitive = new DependenciesTui.DepEntry("org.managed", "ancestor-lib", "", "3.0", "compile", false);
+        List<String> logs = new ArrayList<>();
+        Set<String> ancestorManaged = Set.of("org.managed:ancestor-lib");
+
+        DependenciesReporter.fix(
+                pomPath,
+                List.of(),
+                List.of(transitive),
+                Map.of("org.managed:ancestor-lib", "3.0"),
+                ancestorManaged,
+                logs::add);
+
+        String result = Files.readString(pomPath);
+        assertThat(result).contains("ancestor-lib");
+        // The newly added dependency must NOT have its resolved version hardcoded
+        assertThat(result).doesNotContain("<version>3.0</version>");
+        assertThat(logs).anyMatch(l -> l.contains("version managed by ancestor"));
+    }
+
+    @Test
+    void fixAncestorManagedNonCompileScopeWritten(@TempDir Path tempDir) throws Exception {
+        Path pomPath = tempDir.resolve("pom.xml");
+        Files.writeString(pomPath, """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>com.example</groupId>
+                      <artifactId>existing</artifactId>
+                      <version>1.0</version>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """);
+
+        var transitive = new DependenciesTui.DepEntry("org.managed", "test-lib", "", "2.5", "test", false);
+        List<String> logs = new ArrayList<>();
+        Set<String> ancestorManaged = Set.of("org.managed:test-lib");
+
+        DependenciesReporter.fix(
+                pomPath,
+                List.of(),
+                List.of(transitive),
+                Map.of("org.managed:test-lib", "2.5"),
+                ancestorManaged,
+                logs::add);
+
+        String result = Files.readString(pomPath);
+        assertThat(result).contains("test-lib");
+        assertThat(result).doesNotContain("<version>2.5</version>");
+        assertThat(result).contains("<scope>test</scope>");
+    }
+
+    @Test
+    void fixNonAncestorManagedWritesVersion(@TempDir Path tempDir) throws Exception {
+        Path pomPath = tempDir.resolve("pom.xml");
+        Files.writeString(pomPath, """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>com.example</groupId>
+                      <artifactId>existing</artifactId>
+                      <version>1.0</version>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """);
+
+        var transitive = new DependenciesTui.DepEntry("org.other", "unmanaged-lib", "", "4.0", "compile", false);
+        List<String> logs = new ArrayList<>();
+        // ancestorManaged does NOT include org.other:unmanaged-lib
+        Set<String> ancestorManaged = Set.of("org.managed:something-else");
+
+        DependenciesReporter.fix(
+                pomPath,
+                List.of(),
+                List.of(transitive),
+                Map.of("org.other:unmanaged-lib", "4.0"),
+                ancestorManaged,
+                logs::add);
+
+        String result = Files.readString(pomPath);
+        assertThat(result).contains("unmanaged-lib").contains("4.0");
+    }
+
+    @Test
+    void fixAncestorManagedNoDependenciesSection(@TempDir Path tempDir) throws Exception {
+        // Tests the case where the POM has no <dependencies> section yet
+        Path pomPath = tempDir.resolve("pom.xml");
+        Files.writeString(pomPath, """
+                <project>
+                  <groupId>org.example</groupId>
+                  <artifactId>my-module</artifactId>
+                  <version>1.0</version>
+                </project>
+                """);
+
+        var transitive = new DependenciesTui.DepEntry("org.managed", "bom-lib", "", "5.0", "compile", false);
+        List<String> logs = new ArrayList<>();
+        Set<String> ancestorManaged = Set.of("org.managed:bom-lib");
+
+        DependenciesReporter.fix(
+                pomPath,
+                List.of(),
+                List.of(transitive),
+                Map.of("org.managed:bom-lib", "5.0"),
+                ancestorManaged,
+                logs::add);
+
+        String result = Files.readString(pomPath);
+        assertThat(result).contains("bom-lib");
+        assertThat(result).doesNotContain("<version>5.0</version>");
+        assertThat(result).contains("<dependencies>");
     }
 }

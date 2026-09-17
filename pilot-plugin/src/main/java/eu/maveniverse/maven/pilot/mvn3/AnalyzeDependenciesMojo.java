@@ -203,7 +203,12 @@ public class AnalyzeDependenciesMojo extends AbstractMojo {
         switch (action) {
             case "fix" ->
                 DependenciesReporter.fix(
-                        proj.getFile().toPath(), unusedDeclared, usedTransitive, gaToVersion, getLog()::info);
+                        proj.getFile().toPath(),
+                        unusedDeclared,
+                        usedTransitive,
+                        gaToVersion,
+                        DependenciesMojo.buildAncestorManagedGAs(proj),
+                        getLog()::info);
             case "report" -> getLog().warn(DependenciesReporter.formatFindings(unusedDeclared, usedTransitive));
             default ->
                 throw new MojoFailureException(DependenciesReporter.formatCheckFailure(unusedDeclared, usedTransitive));

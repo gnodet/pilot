@@ -775,4 +775,23 @@ class DependencyUsageAnalyzerTest {
 
         assertThat(result.declaredUsage()).containsEntry("com.example:svc", DependencyUsageAnalyzer.UsageStatus.UNUSED);
     }
+
+    // --- isTestScope ---
+
+    @Test
+    void isTestScopeReturnsTrueForTestScopes() {
+        assertThat(DependencyUsageAnalyzer.isTestScope("test")).isTrue();
+        assertThat(DependencyUsageAnalyzer.isTestScope("test-only")).isTrue();
+        assertThat(DependencyUsageAnalyzer.isTestScope("test-runtime")).isTrue();
+    }
+
+    @Test
+    void isTestScopeReturnsFalseForNonTestScopes() {
+        assertThat(DependencyUsageAnalyzer.isTestScope("compile")).isFalse();
+        assertThat(DependencyUsageAnalyzer.isTestScope("provided")).isFalse();
+        assertThat(DependencyUsageAnalyzer.isTestScope("runtime")).isFalse();
+        assertThat(DependencyUsageAnalyzer.isTestScope("compile-only")).isFalse();
+        assertThat(DependencyUsageAnalyzer.isTestScope(null)).isFalse();
+        assertThat(DependencyUsageAnalyzer.isTestScope("")).isFalse();
+    }
 }

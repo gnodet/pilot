@@ -51,7 +51,6 @@ public class PilotEngine {
     private final String scope;
     private final Map<String, DependencyTreeModel> treeCache = new ConcurrentHashMap<>();
     private final Map<String, AuditTui.AuditEntry> auditEntryCache = new ConcurrentHashMap<>();
-    private static final Set<String> TEST_SCOPES = Set.of("test", "test-only", "test-runtime");
 
     public PilotEngine(PilotResolver resolver, List<PilotProject> allProjects, String scope) {
         this.resolver = resolver;
@@ -318,7 +317,7 @@ public class PilotEngine {
                 Set<String> depClasses = gaToClasses.get(dep.ga());
                 dep.totalClasses = depClasses != null ? depClasses.size() : 0;
                 if (depClasses != null) {
-                    boolean isTest = TEST_SCOPES.contains(dep.scope);
+                    boolean isTest = DependencyUsageAnalyzer.isTestScope(dep.scope);
                     dep.usedMembers = findUsedMembers(
                             depClasses,
                             isTest,

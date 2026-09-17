@@ -21,8 +21,11 @@ package eu.maveniverse.maven.pilot.mvn3;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import eu.maveniverse.maven.pilot.DependenciesTui;
+import eu.maveniverse.maven.pilot.DependencyUsageAnalyzer;
 import java.io.File;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,8 +34,10 @@ import org.apache.maven.model.DependencyManagement;
 import org.apache.maven.model.InputLocation;
 import org.apache.maven.model.InputSource;
 import org.apache.maven.plugin.MojoExecutionException;
+import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class DependenciesMojoTest {
 
@@ -219,5 +224,91 @@ class DependenciesMojoTest {
 
         // own-lib must NOT appear in ancestorManagedGAs despite the non-normalized path
         assertThat(result).doesNotContain("com.example:own-lib");
+    }
+
+    // --- skipTestScope parameter ---
+
+    @Test
+    void defaultSkipTestScopeIsFalse() throws Exception {
+        var mojo = new DependenciesMojo(null);
+        assertThat(MojoTestHelper.getField(mojo, "skipTestScope")).isEqualTo(false);
+    }
+
+    @Test
+    void executeNonInteractive_check_escalatesUnusedTestDep() throws Exception {
+        // check action: a pre-classified UNUSED test-scoped dep must be escalated to MojoFailureException.
+        // (The dep classification happens upstream in executeForProject; here we verify that
+        // executeNonInteractive correctly collects it into unusedDeclared and fails.)
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+
+        var dep = new DependenciesTui.DepEntry("org.awaitility", "awaitility", "", "4.2.0", "test", true);
+        dep.usageStatus = DependencyUsageAnalyzer.UsageStatus.UNUSED;
+
+        List<DependenciesTui.DepEntry> declared = List.of(dep);
+        List<DependenciesTui.DepEntry> transitive = List.of();
+
+        MavenProject proj = new MavenProject();
+        proj.setFile(Files.createTempFile("pom", ".xml").toFile());
+
+        // check action: UNUSED dep in unusedDeclared → MojoFailureException
+        assertThatThrownBy(() -> mojo.executeNonInteractive(proj, declared, transitive, Map.of()))
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("org.awaitility:awaitility");
+    }
+
+    // --- executeForProject guard ---
+
+    @Test
+    void executeForProject_failsWhenClassesAbsent(@TempDir Path tmp) {
+        MavenProject proj = new MavenProject();
+        proj.setPackaging("jar");
+        proj.getBuild().setOutputDirectory(tmp.resolve("classes").toString()); // non-existent
+        proj.getBuild().setTestOutputDirectory(tmp.resolve("test-classes").toString());
+
+        var mojo = new DependenciesMojo(null);
+        assertThatThrownBy(() -> mojo.executeForProject(proj))
+                .isInstanceOf(MojoExecutionException.class)
+                .hasMessageContaining("target/classes not found");
+    }
+
+    @Test
+    void executeForProject_failsWhenTestClassesAbsentAndTestScopedDepDeclared(@TempDir Path tmp) throws Exception {
+        Path classesDir = Files.createDirectory(tmp.resolve("classes"));
+
+        MavenProject proj = new MavenProject();
+        proj.setPackaging("jar");
+        proj.getBuild().setOutputDirectory(classesDir.toString());
+        proj.getBuild().setTestOutputDirectory(tmp.resolve("test-classes").toString()); // non-existent
+        // No test source root — guard must trigger on declared dep scope, not test sources
+        Dependency dep = new Dependency();
+        dep.setGroupId("org.junit.jupiter");
+        dep.setArtifactId("junit-jupiter-api");
+        dep.setVersion("5.10.0");
+        dep.setScope("test");
+        proj.getDependencies().add(dep);
+
+        var mojo = new DependenciesMojo(null);
+        assertThatThrownBy(() -> mojo.executeForProject(proj))
+                .isInstanceOf(MojoExecutionException.class)
+                .hasMessageContaining("target/test-classes not found");
+    }
+
+    @Test
+    void executeForProject_doesNotFailWhenTestClassesAbsentAndNoTestScopedDeps(@TempDir Path tmp) throws Exception {
+        // Projects with no test-scoped deps and no test-classes must not be rejected —
+        // the guard must be a no-op, and executeForProject should proceed past it
+        // (it will NPE later on repoSystem, which is fine — the guard didn't fire).
+        Path classesDir = Files.createDirectory(tmp.resolve("classes"));
+
+        MavenProject proj = new MavenProject();
+        proj.setPackaging("jar");
+        proj.getBuild().setOutputDirectory(classesDir.toString());
+        proj.getBuild().setTestOutputDirectory(tmp.resolve("test-classes").toString()); // non-existent
+        // No dependencies at all
+
+        var mojo = new DependenciesMojo(null);
+        // Guard must NOT throw MojoExecutionException — it will NPE deeper in repoSystem
+        assertThatThrownBy(() -> mojo.executeForProject(proj)).isNotInstanceOf(MojoExecutionException.class);
     }
 }

@@ -59,15 +59,15 @@ import org.eclipse.aether.resolution.DependencyResult;
  * <p>When the project has been compiled ({@code target/classes} exists), performs bytecode-level
  * analysis to determine which dependencies are actually referenced in code.
  * For accurate analysis of test-scoped dependencies, {@code target/test-classes} must also
- * exist (i.e. at least the {@code test-compile} phase must have run). If test classes are absent
+ * exist (i.e. at least the {@code package} phase must have run). If test classes are absent
  * and the project declares test-scoped dependencies, the mojo fails — use
  * {@code -Dpilot.skipTestScope=true} to skip test-scope analysis entirely.</p>
  *
  * <p>Usage:</p>
  * <pre>
- * mvn test-compile pilot:dependencies                              # full analysis (recommended)
- * mvn test-compile pilot:dependencies -Dpilot.action=check
- * mvn test-compile pilot:dependencies -Dpilot.action=fix
+ * mvn package pilot:dependencies                              # full analysis (recommended)
+ * mvn package pilot:dependencies -Dpilot.action=check
+ * mvn package pilot:dependencies -Dpilot.action=fix
  * mvn compile pilot:dependencies -Dpilot.skipTestScope=true  # skip test-scope analysis
  * </pre>
  *
@@ -153,7 +153,7 @@ public class DependenciesMojo extends AbstractMojo {
                         .anyMatch(dep -> DependencyUsageAnalyzer.isTestScope(dep.getScope()))) {
             throw new MojoExecutionException(
                     "target/test-classes not found but the project declares test-scoped dependencies."
-                            + " Run 'mvn test-compile pilot:dependencies' for accurate analysis,"
+                            + " Run 'mvn package pilot:dependencies' for accurate analysis,"
                             + " or use -Dpilot.skipTestScope=true to exclude test-scope analysis.");
         }
 

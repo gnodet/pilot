@@ -275,6 +275,103 @@ class DependencyUsageAnalyzerTest {
     }
 
     @Test
+    void annotationProcessorTestScopeMarkedAsUsed(@TempDir Path tempDir) throws Exception {
+        // jmh-generator-annprocess is typically declared with test scope; it generates benchmark
+        // infrastructure at compile time but leaves no bytecode trace in the compiled output.
+        Path tempJar = tempDir.resolve("jmh-generator-annprocess.jar");
+        createJarWithEntries(tempJar, "META-INF/services/javax.annotation.processing.Processor");
+
+        var dep = new DependenciesTui.DepEntry("org.openjdk.jmh", "jmh-generator-annprocess", "", "1.37", "test", true);
+        Map<String, File> gaToJar = Map.of("org.openjdk.jmh:jmh-generator-annprocess", tempJar.toFile());
+        Map<String, String> classIndex = Map.of();
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+
+        assertThat(result.declaredUsage())
+                .containsEntry("org.openjdk.jmh:jmh-generator-annprocess", DependencyUsageAnalyzer.UsageStatus.USED);
+    }
+
+    @Test
+    void annotationProcessorTestOnlyScopeMarkedAsUsed(@TempDir Path tempDir) throws Exception {
+        // Maven 4 "test-only" is the equivalent of "test" for annotation processors
+        // that are only needed during test compilation.
+        Path tempJar = tempDir.resolve("test-only-processor.jar");
+        createJarWithEntries(tempJar, "META-INF/services/javax.annotation.processing.Processor");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "test-processor", "", "1.0", "test-only", true);
+        Map<String, File> gaToJar = Map.of("com.example:test-processor", tempJar.toFile());
+        Map<String, String> classIndex = Map.of();
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+
+        assertThat(result.declaredUsage())
+                .containsEntry("com.example:test-processor", DependencyUsageAnalyzer.UsageStatus.USED);
+    }
+
+    @Test
+    void annotationProcessorCompileOnlyScopeMarkedAsUsed(@TempDir Path tempDir) throws Exception {
+        // Maven 4 "compile-only" is the idiomatic scope for annotation processors.
+        Path tempJar = tempDir.resolve("processor.jar");
+        createJarWithEntries(tempJar, "META-INF/services/javax.annotation.processing.Processor");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "my-processor", "", "1.0", "compile-only", true);
+        Map<String, File> gaToJar = Map.of("com.example:my-processor", tempJar.toFile());
+        Map<String, String> classIndex = Map.of();
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+
+        assertThat(result.declaredUsage())
+                .containsEntry("com.example:my-processor", DependencyUsageAnalyzer.UsageStatus.USED);
+    }
+
+    @Test
+    void annotationProcessorRuntimeScopeNotMarkedAsUsed(@TempDir Path tempDir) throws Exception {
+        // A JAR with a processor SPI entry but declared "runtime" scope is not an intentional
+        // annotation processor dependency and should NOT be exempted from the unused check.
+        Path tempJar = tempDir.resolve("runtime-with-processor-spi.jar");
+        createJarWithEntries(tempJar, "META-INF/services/javax.annotation.processing.Processor");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "runtime-lib", "", "1.0", "runtime", true);
+        Map<String, File> gaToJar = Map.of("com.example:runtime-lib", tempJar.toFile());
+        Map<String, String> classIndex = Map.of();
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+
+        // Should be UNDETERMINED (no classes in index), NOT USED
+        assertThat(result.declaredUsage())
+                .containsEntry("com.example:runtime-lib", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
+    @Test
+    void annotationProcessorTestRuntimeScopeNotMarkedAsUsed(@TempDir Path tempDir) throws Exception {
+        // test-runtime sits adjacent to test-only in TEST_SCOPES but must NOT be in
+        // ANNOTATION_PROCESSOR_SCOPES: a test-runtime dep is only on the test runtime classpath,
+        // not the test compile classpath, so javac would never invoke it as a processor.
+        Path tempJar = tempDir.resolve("test-runtime-with-processor-spi.jar");
+        createJarWithEntries(tempJar, "META-INF/services/javax.annotation.processing.Processor");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "test-runtime-lib", "", "1.0", "test-runtime", true);
+        Map<String, File> gaToJar = Map.of("com.example:test-runtime-lib", tempJar.toFile());
+        Map<String, String> classIndex = Map.of();
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+
+        // Should be UNDETERMINED (no classes in index), NOT USED
+        assertThat(result.declaredUsage())
+                .containsEntry("com.example:test-runtime-lib", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
+    @Test
     void serviceEntryWithSubdirectoryIgnored(@TempDir Path tempDir) throws Exception {
         Path tempJar = tempDir.resolve("subdir-lib.jar");
         // Subdirectory under services — should NOT be treated as a service interface

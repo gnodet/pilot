@@ -58,6 +58,23 @@ public final class DependencyUsageAnalyzer {
     private static final String META_INF_SISU = "META-INF/sisu/";
     private static final String META_INF_MAVEN_DI = "META-INF/maven/";
     private static final Set<String> TEST_SCOPES = Set.of("test", "test-only", "test-runtime");
+    /**
+     * Scopes in which annotation processors may be legitimately declared.
+     * An annotation processor JAR (one whose {@code META-INF/services/javax.annotation.processing.Processor}
+     * entry is present) is considered used when declared in any of these scopes:
+     * <ul>
+     *   <li>{@code compile}   — common for processors bundled with annotations (e.g. Lombok)</li>
+     *   <li>{@code provided}  — processor applied at compile time, not needed at runtime</li>
+     *   <li>{@code test}      — processor applied only during test compilation (e.g. jmh-generator-annprocess)</li>
+     *   <li>{@code test-only} — Maven 4 equivalent of {@code test}</li>
+     *   <li>{@code compile-only} — Maven 4 equivalent of {@code provided}</li>
+     * </ul>
+     * {@code runtime} and {@code test-runtime} are intentionally excluded: annotation processors
+     * must be on the compile classpath to be invoked by {@code javac}; dependencies declared with
+     * those scopes are only available at runtime and would never be invoked as processors.
+     */
+    private static final Set<String> ANNOTATION_PROCESSOR_SCOPES =
+            Set.of("compile", "provided", "test", "test-only", "compile-only");
 
     public enum UsageStatus {
         USED,
@@ -217,8 +234,9 @@ public final class DependencyUsageAnalyzer {
             return UsageStatus.USED;
         }
         // Annotation processors are used at compile time without direct bytecode references.
-        // They can be declared with "provided" or "compile" scope (e.g. Lombok).
-        if (("provided".equals(dep.scope) || "compile".equals(dep.scope))
+        // They may be declared in any scope listed in ANNOTATION_PROCESSOR_SCOPES
+        // (compile, provided, test, test-only, compile-only); runtime and test-runtime are excluded.
+        if (ANNOTATION_PROCESSOR_SCOPES.contains(dep.scope)
                 && info.discoveryClasses().contains("javax.annotation.processing.Processor")) {
             return UsageStatus.USED;
         }

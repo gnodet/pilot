@@ -31,25 +31,26 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
 /**
- * Builds a class-to-artifact index from resolved JARs and classifies dependency usage
- * based on bytecode analysis results.
- *
- * <p>The analyzer supports three optional allowlists that override the default classification
- * for dependencies that are legitimately used but cannot be detected through bytecode analysis:</p>
+ * Builds a class-to-artifact index from resolved JARs and classifies dependency usage based on bytecode analysis
+ * results.
+ * <p>
+ * The analyzer supports three optional allowlists that override the default classification for dependencies that are
+ * legitimately used but cannot be detected through bytecode analysis:
+ * </p>
  * <ul>
- *   <li><b>runtimeArtifacts</b> — artifacts needed only at runtime (JDBC drivers, SLF4J backends)</li>
- *   <li><b>annotationOnlyArtifacts</b> — artifacts providing source/class-retention annotations</li>
- *   <li><b>reflectionLoadedClasses</b> — classes loaded via reflection, verified against the JAR</li>
+ * <li><b>runtimeArtifacts</b> — artifacts needed only at runtime (JDBC drivers, SLF4J backends)</li>
+ * <li><b>annotationOnlyArtifacts</b> — artifacts providing source/class-retention annotations</li>
+ * <li><b>reflectionLoadedClasses</b> — classes loaded via reflection, verified against the JAR</li>
  * </ul>
+ * <p>
+ * Use {@link #builder()} to configure allowlists:
+ * </p>
  *
- * <p>Use {@link #builder()} to configure allowlists:</p>
  * <pre>{@code
  * DependencyUsageAnalyzer analyzer = DependencyUsageAnalyzer.builder()
- *     .runtimeArtifacts(Set.of("org.postgresql:postgresql"))
- *     .annotationOnlyArtifacts(Set.of("org.projectlombok:lombok"))
- *     .reflectionLoadedClasses(Map.of(
- *         "org.postgresql:postgresql", List.of("org.postgresql.Driver")))
- *     .build();
+ *         .runtimeArtifacts(Set.of("org.postgresql:postgresql"))
+ *         .annotationOnlyArtifacts(Set.of("org.projectlombok:lombok"))
+ *         .reflectionLoadedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver"))).build();
  * }</pre>
  */
 public final class DependencyUsageAnalyzer {
@@ -59,30 +60,29 @@ public final class DependencyUsageAnalyzer {
     private static final String META_INF_MAVEN_DI = "META-INF/maven/";
     private static final Set<String> TEST_SCOPES = Set.of("test", "test-only", "test-runtime");
     /**
-     * Scopes in which annotation processors may be legitimately declared.
-     * An annotation processor JAR (one whose {@code META-INF/services/javax.annotation.processing.Processor}
-     * entry is present) is considered used when declared in any of these scopes:
+     * Scopes in which annotation processors may be legitimately declared. An annotation processor JAR (one whose
+     * {@code META-INF/services/javax.annotation.processing.Processor} entry is present) is considered used when
+     * declared in any of these scopes:
      * <ul>
-     *   <li>{@code compile}   — common for processors bundled with annotations (e.g. Lombok)</li>
-     *   <li>{@code provided}  — processor applied at compile time, not needed at runtime</li>
-     *   <li>{@code test}      — processor applied only during test compilation (e.g. jmh-generator-annprocess)</li>
-     *   <li>{@code test-only} — Maven 4 equivalent of {@code test}</li>
-     *   <li>{@code compile-only} — Maven 4 equivalent of {@code provided}</li>
+     * <li>{@code compile} — common for processors bundled with annotations (e.g. Lombok)</li>
+     * <li>{@code provided} — processor applied at compile time, not needed at runtime</li>
+     * <li>{@code test} — processor applied only during test compilation (e.g. jmh-generator-annprocess)</li>
+     * <li>{@code test-only} — Maven 4 equivalent of {@code test}</li>
+     * <li>{@code compile-only} — Maven 4 equivalent of {@code provided}</li>
      * </ul>
-     * {@code runtime} and {@code test-runtime} are intentionally excluded: annotation processors
-     * must be on the compile classpath to be invoked by {@code javac}; dependencies declared with
-     * those scopes are only available at runtime and would never be invoked as processors.
+     * {@code runtime} and {@code test-runtime} are intentionally excluded: annotation processors must be on the compile
+     * classpath to be invoked by {@code javac}; dependencies declared with those scopes are only available at runtime
+     * and would never be invoked as processors.
      */
-    private static final Set<String> ANNOTATION_PROCESSOR_SCOPES =
-            Set.of("compile", "provided", "test", "test-only", "compile-only");
+    private static final Set<String> ANNOTATION_PROCESSOR_SCOPES = Set.of("compile", "provided", "test", "test-only",
+            "compile-only");
 
     public enum UsageStatus {
-        USED,
-        UNUSED,
-        UNDETERMINED
+        USED, UNUSED, UNDETERMINED
     }
 
-    public record AnalysisResult(Map<String, UsageStatus> declaredUsage, Map<String, UsageStatus> transitiveUsage) {}
+    public record AnalysisResult(Map<String, UsageStatus> declaredUsage, Map<String, UsageStatus> transitiveUsage) {
+    }
 
     private final Set<String> runtimeArtifacts;
     private final Set<String> annotationOnlyArtifacts;
@@ -101,10 +101,11 @@ public final class DependencyUsageAnalyzer {
     }
 
     /**
-     * Build an index mapping fully-qualified class names to their providing artifact's
-     * {@code groupId:artifactId}.
+     * Build an index mapping fully-qualified class names to their providing artifact's {@code groupId:artifactId}.
      *
-     * @param gaToJar map from GA string to resolved JAR file
+     * @param gaToJar
+     *            map from GA string to resolved JAR file
+     *
      * @return map from class name (dot-separated) to GA string
      */
     @SuppressWarnings("java:S5042") // JARs are from Maven's local repository, already verified
@@ -134,20 +135,23 @@ public final class DependencyUsageAnalyzer {
     /**
      * Classify each dependency as USED, UNUSED, or UNDETERMINED based on bytecode references.
      *
-     * @param mainRefs     class names referenced from {@code target/classes}
-     * @param testRefs     class names referenced from {@code target/test-classes}
-     * @param classIndex   class name to GA mapping (from {@link #buildClassIndex})
-     * @param gaToJar      GA to JAR file mapping (for annotation processor detection)
-     * @param declared     declared dependency entries
-     * @param transitive   transitive dependency entries
+     * @param mainRefs
+     *            class names referenced from {@code target/classes}
+     * @param testRefs
+     *            class names referenced from {@code target/test-classes}
+     * @param classIndex
+     *            class name to GA mapping (from {@link #buildClassIndex})
+     * @param gaToJar
+     *            GA to JAR file mapping (for annotation processor detection)
+     * @param declared
+     *            declared dependency entries
+     * @param transitive
+     *            transitive dependency entries
+     *
      * @return analysis result with usage status for each dependency
      */
-    public AnalysisResult analyze(
-            Set<String> mainRefs,
-            Set<String> testRefs,
-            Map<String, String> classIndex,
-            Map<String, File> gaToJar,
-            List<DependenciesTui.DepEntry> declared,
+    public AnalysisResult analyze(Set<String> mainRefs, Set<String> testRefs, Map<String, String> classIndex,
+            Map<String, File> gaToJar, List<DependenciesTui.DepEntry> declared,
             List<DependenciesTui.DepEntry> transitive) {
 
         // Build reverse index: GA -> set of class names provided by that artifact
@@ -173,12 +177,8 @@ public final class DependencyUsageAnalyzer {
         return new AnalysisResult(declaredUsage, transitiveUsage);
     }
 
-    private UsageStatus classify(
-            DependenciesTui.DepEntry dep,
-            Map<String, Set<String>> gaToClasses,
-            Map<String, File> gaToJar,
-            Set<String> mainRefs,
-            Set<String> allRefs) {
+    private UsageStatus classify(DependenciesTui.DepEntry dep, Map<String, Set<String>> gaToClasses,
+            Map<String, File> gaToJar, Set<String> mainRefs, Set<String> allRefs) {
 
         // Choose the appropriate reference set based on scope.
         // Maven 3 scopes: compile, provided, runtime, test, system.
@@ -207,20 +207,20 @@ public final class DependencyUsageAnalyzer {
 
     /**
      * Classify a dependency based on runtime-discovery metadata (ServiceLoader, Sisu, Maven DI).
-     *
-     * <p>Returns:</p>
+     * <p>
+     * Returns:
+     * </p>
      * <ul>
-     *   <li>{@link UsageStatus#USED} — the dep's registered service interface is directly
-     *       referenced by the consuming module's bytecode, or it is an annotation processor.</li>
-     *   <li>{@link UsageStatus#UNDETERMINED} — the dep's JAR contains DI/SPI registration
-     *       metadata (Maven DI, Sisu) but its wiring interface is not in the consumer's
-     *       bytecode. The DI container resolves these at runtime without direct class
-     *       references, so we cannot determine usage from bytecode alone.</li>
-     *   <li>{@code null} — the dep has no runtime-discovery metadata; caller decides.</li>
+     * <li>{@link UsageStatus#USED} — the dep's registered service interface is directly referenced by the consuming
+     * module's bytecode, or it is an annotation processor.</li>
+     * <li>{@link UsageStatus#UNDETERMINED} — the dep's JAR contains DI/SPI registration metadata (Maven DI, Sisu) but
+     * its wiring interface is not in the consumer's bytecode. The DI container resolves these at runtime without direct
+     * class references, so we cannot determine usage from bytecode alone.</li>
+     * <li>{@code null} — the dep has no runtime-discovery metadata; caller decides.</li>
      * </ul>
      */
-    private static UsageStatus classifyByRuntimeDiscovery(
-            DependenciesTui.DepEntry dep, Map<String, File> gaToJar, Set<String> refs) {
+    private static UsageStatus classifyByRuntimeDiscovery(DependenciesTui.DepEntry dep, Map<String, File> gaToJar,
+            Set<String> refs) {
         File jarFile = gaToJar.get(dep.ga());
         if (jarFile == null) {
             return null;
@@ -247,14 +247,23 @@ public final class DependencyUsageAnalyzer {
         if (info.hasMavenDiOrSisu()) {
             return UsageStatus.UNDETERMINED;
         }
-        return null;
+        // The dep has ServiceLoader registration metadata (META-INF/services/<X>) but the consumer
+        // does not reference the service interface <X> in bytecode. This covers runtime-only
+        // bindings such as SLF4J backends (e.g. log4j-slf4j2-impl registers
+        // META-INF/services/org.slf4j.spi.SLF4JServiceProvider): the SLF4J framework itself
+        // loads the provider at runtime via ServiceLoader — the consuming module has no direct
+        // import. Bytecode analysis cannot determine whether such a dep is actually needed, so
+        // UNDETERMINED is the correct status rather than UNUSED.
+        return UsageStatus.UNDETERMINED;
     }
 
     /**
      * Result of a single JAR scan for runtime-discovery metadata.
      *
-     * @param discoveryClasses class names used as service/DI wiring keys
-     * @param hasMavenDiOrSisu {@code true} if the JAR has a Maven DI or Sisu index
+     * @param discoveryClasses
+     *            class names used as service/DI wiring keys
+     * @param hasMavenDiOrSisu
+     *            {@code true} if the JAR has a Maven DI or Sisu index
      */
     record DiscoveryInfo(Set<String> discoveryClasses, boolean hasMavenDiOrSisu) {
         boolean hasAnyDiscoveryMetadata() {
@@ -263,13 +272,13 @@ public final class DependencyUsageAnalyzer {
     }
 
     /**
-     * Returns {@code true} if the JAR contains a Maven DI index
-     * ({@code META-INF/maven/<annotation-fqn>}) or a Sisu index
-     * ({@code META-INF/sisu/<annotation-fqn>}).
-     *
-     * <p>These index files are written at build time by the Sisu Maven plugin and the
-     * Maven DI compiler plugin. At runtime the DI container reads them to discover
-     * injectable components without any direct bytecode reference in the consuming module.</p>
+     * Returns {@code true} if the JAR contains a Maven DI index ({@code META-INF/maven/<annotation-fqn>}) or a Sisu
+     * index ({@code META-INF/sisu/<annotation-fqn>}).
+     * <p>
+     * These index files are written at build time by the Sisu Maven plugin and the Maven DI compiler plugin. At runtime
+     * the DI container reads them to discover injectable components without any direct bytecode reference in the
+     * consuming module.
+     * </p>
      */
     @SuppressWarnings("java:S5042") // JARs are from Maven's local repository, already verified
     static boolean hasMavenDiOrSisuRegistration(File jarFile) {
@@ -302,9 +311,8 @@ public final class DependencyUsageAnalyzer {
                 classes.add("org.springframework.stereotype.Component");
             }
             // Spring Boot auto-configuration
-            if (jar.getEntry("META-INF/spring.factories") != null
-                    || jar.getEntry("META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports")
-                            != null) {
+            if (jar.getEntry("META-INF/spring.factories") != null || jar.getEntry(
+                    "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports") != null) {
                 classes.add("org.springframework.boot.autoconfigure.EnableAutoConfiguration");
             }
         } catch (IOException ignored) {
@@ -314,9 +322,9 @@ public final class DependencyUsageAnalyzer {
     }
 
     /**
-     * Returns {@code true} for a {@code META-INF/maven/<fqn>} entry where {@code <fqn>}
-     * is a flat class name (no further slashes), distinguishing DI index files from
-     * the standard Maven POM metadata ({@code META-INF/maven/<groupId>/<artifactId>/...}).
+     * Returns {@code true} for a {@code META-INF/maven/<fqn>} entry where {@code <fqn>} is a flat class name (no
+     * further slashes), distinguishing DI index files from the standard Maven POM metadata
+     * ({@code META-INF/maven/<groupId>/<artifactId>/...}).
      */
     private static boolean isMavenDiEntry(String name) {
         if (!name.startsWith(META_INF_MAVEN_DI) || name.equals(META_INF_MAVEN_DI)) {
@@ -329,8 +337,8 @@ public final class DependencyUsageAnalyzer {
     }
 
     /**
-     * Returns {@code true} for a {@code META-INF/sisu/<annotation-fqn>} entry
-     * (flat file, no sub-path), e.g. {@code META-INF/sisu/javax.inject.Named}.
+     * Returns {@code true} for a {@code META-INF/sisu/<annotation-fqn>} entry (flat file, no sub-path), e.g.
+     * {@code META-INF/sisu/javax.inject.Named}.
      */
     private static boolean isSisuEntry(String name) {
         if (!name.startsWith(META_INF_SISU) || name.equals(META_INF_SISU)) {
@@ -357,10 +365,9 @@ public final class DependencyUsageAnalyzer {
     }
 
     /**
-     * Check whether a dependency's GA coordinates match any pattern in the given set.
-     * Supports exact matches ({@code groupId:artifactId}) and wildcard matches ({@code groupId:*}).
-     * For dependencies with a classifier ({@code groupId:artifactId:classifier}), the pattern
-     * is also matched against the base {@code groupId:artifactId}.
+     * Check whether a dependency's GA coordinates match any pattern in the given set. Supports exact matches
+     * ({@code groupId:artifactId}) and wildcard matches ({@code groupId:*}). For dependencies with a classifier
+     * ({@code groupId:artifactId:classifier}), the pattern is also matched against the base {@code groupId:artifactId}.
      */
     public static boolean matchesArtifactPattern(String ga, Set<String> patterns) {
         if (patterns.isEmpty()) {
@@ -386,15 +393,16 @@ public final class DependencyUsageAnalyzer {
 
     /**
      * Extract class names used for runtime discovery from a JAR.
-     *
-     * <p>Covers four conventions:</p>
+     * <p>
+     * Covers four conventions:
+     * </p>
      * <ul>
-     *   <li><b>ServiceLoader</b>: {@code META-INF/services/<interface>}</li>
-     *   <li><b>Sisu/JSR-330</b>: {@code META-INF/sisu/<annotation>}</li>
-     *   <li><b>Maven DI</b>: {@code META-INF/maven/<annotation>} (flat file, not the POM metadata
-     *       at {@code META-INF/maven/<groupId>/<artifactId>/...})</li>
-     *   <li><b>Spring</b>: {@code META-INF/spring.components} and {@code META-INF/spring.factories}
-     *       — reads the keys/values to extract referenced class names</li>
+     * <li><b>ServiceLoader</b>: {@code META-INF/services/<interface>}</li>
+     * <li><b>Sisu/JSR-330</b>: {@code META-INF/sisu/<annotation>}</li>
+     * <li><b>Maven DI</b>: {@code META-INF/maven/<annotation>} (flat file, not the POM metadata at
+     * {@code META-INF/maven/<groupId>/<artifactId>/...})</li>
+     * <li><b>Spring</b>: {@code META-INF/spring.components} and {@code META-INF/spring.factories} — reads the
+     * keys/values to extract referenced class names</li>
      * </ul>
      */
     public static Set<String> getRuntimeDiscoveryClasses(File jarFile) {
@@ -415,12 +423,12 @@ public final class DependencyUsageAnalyzer {
         private Set<String> annotationOnlyArtifacts = Set.of();
         private Map<String, List<String>> reflectionLoadedClasses = Map.of();
 
-        private Builder() {}
+        private Builder() {
+        }
 
         /**
-         * Artifacts that are needed only at runtime and never referenced in bytecode
-         * (JDBC drivers, SLF4J backends, XML parser implementations, JVM agents).
-         * Patterns: {@code groupId:artifactId} or {@code groupId:*}.
+         * Artifacts that are needed only at runtime and never referenced in bytecode (JDBC drivers, SLF4J backends, XML
+         * parser implementations, JVM agents). Patterns: {@code groupId:artifactId} or {@code groupId:*}.
          */
         public Builder runtimeArtifacts(Set<String> patterns) {
             this.runtimeArtifacts = patterns;
@@ -428,9 +436,8 @@ public final class DependencyUsageAnalyzer {
         }
 
         /**
-         * Artifacts that provide only source- or class-retention annotations which are
-         * erased during compilation (Lombok, SpotBugs annotations, ErrorProne).
-         * Patterns: {@code groupId:artifactId} or {@code groupId:*}.
+         * Artifacts that provide only source- or class-retention annotations which are erased during compilation
+         * (Lombok, SpotBugs annotations, ErrorProne). Patterns: {@code groupId:artifactId} or {@code groupId:*}.
          */
         public Builder annotationOnlyArtifacts(Set<String> patterns) {
             this.annotationOnlyArtifacts = patterns;
@@ -438,11 +445,10 @@ public final class DependencyUsageAnalyzer {
         }
 
         /**
-         * Classes known to be loaded via reflection, mapped by their providing artifact.
-         * Keys must be exact {@code groupId:artifactId} coordinates; wildcard patterns
-         * like {@code groupId:*} are not supported. During classification the artifact's
-         * class index is checked to verify the class is actually present, so the allowlist
-         * stays valid even if a class moves.
+         * Classes known to be loaded via reflection, mapped by their providing artifact. Keys must be exact
+         * {@code groupId:artifactId} coordinates; wildcard patterns like {@code groupId:*} are not supported. During
+         * classification the artifact's class index is checked to verify the class is actually present, so the
+         * allowlist stays valid even if a class moves.
          */
         public Builder reflectionLoadedClasses(Map<String, List<String>> classes) {
             this.reflectionLoadedClasses = classes;

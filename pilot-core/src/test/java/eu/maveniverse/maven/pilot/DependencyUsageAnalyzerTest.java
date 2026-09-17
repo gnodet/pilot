@@ -53,12 +53,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, String> classIndex = Map.of("com.example.Foo", "com.example:used-lib");
         Map<String, File> gaToJar = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of("com.example.Foo"), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of("com.example.Foo"), Set.of(), classIndex,
+                gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:used-lib", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:used-lib",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -68,12 +67,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, String> classIndex = Map.of("com.example.Bar", "com.example:unused-lib");
         Map<String, File> gaToJar = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of("com.other.Unrelated"), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of("com.other.Unrelated"), Set.of(),
+                classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:unused-lib", DependencyUsageAnalyzer.UsageStatus.UNUSED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:unused-lib",
+                DependencyUsageAnalyzer.UsageStatus.UNUSED);
     }
 
     @Test
@@ -84,12 +82,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, String> classIndex = Map.of("com.transitive.Helper", "com.transitive:lib");
         Map<String, File> gaToJar = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of("com.transitive.Helper"), Set.of(), classIndex, gaToJar, List.of(), List.of(dep));
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of("com.transitive.Helper"), Set.of(),
+                classIndex, gaToJar, List.of(), List.of(dep));
 
-        assertThat(result.transitiveUsage())
-                .containsEntry("com.transitive:lib", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.transitiveUsage()).containsEntry("com.transitive:lib",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -99,12 +96,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, String> classIndex = Map.of("com.transitive.Helper", "com.transitive:lib");
         Map<String, File> gaToJar = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of("com.other.Unrelated"), Set.of(), classIndex, gaToJar, List.of(), List.of(dep));
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of("com.other.Unrelated"), Set.of(),
+                classIndex, gaToJar, List.of(), List.of(dep));
 
-        assertThat(result.transitiveUsage())
-                .containsEntry("com.transitive:lib", DependencyUsageAnalyzer.UsageStatus.UNUSED);
+        assertThat(result.transitiveUsage()).containsEntry("com.transitive:lib",
+                DependencyUsageAnalyzer.UsageStatus.UNUSED);
     }
 
     @Test
@@ -114,13 +110,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, String> classIndex = Map.of("org.postgresql.Driver", "org.postgresql:postgresql");
         Map<String, File> gaToJar = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .runtimeArtifacts(Set.of("org.postgresql:postgresql"))
-                .build()
+        var result = DependencyUsageAnalyzer.builder().runtimeArtifacts(Set.of("org.postgresql:postgresql")).build()
                 .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(), List.of(dep));
 
-        assertThat(result.transitiveUsage())
-                .containsEntry("org.postgresql:postgresql", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.transitiveUsage()).containsEntry("org.postgresql:postgresql",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -131,12 +125,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of();
 
         // Not in main refs but in test refs — should be USED
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of(), Set.of("org.junit.Test"), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of(), Set.of("org.junit.Test"), classIndex,
+                gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("org.junit:junit-api", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("org.junit:junit-api",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -147,12 +140,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of();
 
         // Maven 4 "test-only" scope: should be checked against allRefs (main + test)
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of(), Set.of("org.junit.Test"), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of(), Set.of("org.junit.Test"), classIndex,
+                gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("org.junit:junit-api", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("org.junit:junit-api",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -163,12 +155,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of();
 
         // Maven 4 "test-runtime" scope: should be checked against allRefs (main + test)
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of(), Set.of("org.example.TestUtil"), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of(), Set.of("org.example.TestUtil"),
+                classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("org.example:test-util", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("org.example:test-util",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -179,9 +170,8 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of();
 
         // Only in test refs, not main refs — compile-scoped dep should be UNUSED
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of(), Set.of("com.example.Foo"), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of(), Set.of("com.example.Foo"), classIndex,
+                gaToJar, List.of(dep), List.of());
 
         assertThat(result.declaredUsage()).containsEntry("com.example:lib", DependencyUsageAnalyzer.UsageStatus.UNUSED);
     }
@@ -194,22 +184,19 @@ class DependencyUsageAnalyzerTest {
         Map<String, String> classIndex = Map.of();
         Map<String, File> gaToJar = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of("com.example.Foo"), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of("com.example.Foo"), Set.of(), classIndex,
+                gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.mystery:lib", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        assertThat(result.declaredUsage()).containsEntry("com.mystery:lib",
+                DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
     }
 
     @Test
     void buildClassIndexFromJar(@TempDir Path tempDir) throws Exception {
         Path tempJar = tempDir.resolve("index-test.jar");
-        createJarWithEntries(
-                tempJar,
-                "com/example/Foo.class",
-                "com/example/Bar.class",
-                "module-info.class", // should be excluded
+        createJarWithEntries(tempJar, "com/example/Foo.class", "com/example/Bar.class", "module-info.class", // should
+                                                                                                             // be
+                                                                                                             // excluded
                 "META-INF/versions/17/com/example/Foo.class"); // should be excluded
 
         Map<String, File> gaToJar = new HashMap<>();
@@ -217,10 +204,8 @@ class DependencyUsageAnalyzerTest {
 
         Map<String, String> index = DependencyUsageAnalyzer.buildClassIndex(gaToJar);
 
-        assertThat(index)
-                .containsEntry("com.example.Foo", "test:artifact")
-                .containsEntry("com.example.Bar", "test:artifact")
-                .hasSize(2);
+        assertThat(index).containsEntry("com.example.Foo", "test:artifact")
+                .containsEntry("com.example.Bar", "test:artifact").hasSize(2);
     }
 
     @Test
@@ -232,12 +217,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of("com.example:service-lib", tempJar.toFile());
         Map<String, String> classIndex = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of("com.example.SomeService"), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of("com.example.SomeService"), Set.of(),
+                classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:service-lib", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:service-lib",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -249,12 +233,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of("com.example:processor", tempJar.toFile());
         Map<String, String> classIndex = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of(), Set.of(), classIndex, gaToJar,
+                List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:processor", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:processor",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -266,12 +249,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of("org.projectlombok:lombok", tempJar.toFile());
         Map<String, String> classIndex = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of(), Set.of(), classIndex, gaToJar,
+                List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("org.projectlombok:lombok", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("org.projectlombok:lombok",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -285,12 +267,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of("org.openjdk.jmh:jmh-generator-annprocess", tempJar.toFile());
         Map<String, String> classIndex = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of(), Set.of(), classIndex, gaToJar,
+                List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("org.openjdk.jmh:jmh-generator-annprocess", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("org.openjdk.jmh:jmh-generator-annprocess",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -304,12 +285,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of("com.example:test-processor", tempJar.toFile());
         Map<String, String> classIndex = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of(), Set.of(), classIndex, gaToJar,
+                List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:test-processor", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:test-processor",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -322,12 +302,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of("com.example:my-processor", tempJar.toFile());
         Map<String, String> classIndex = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of(), Set.of(), classIndex, gaToJar,
+                List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:my-processor", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:my-processor",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -341,13 +320,12 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of("com.example:runtime-lib", tempJar.toFile());
         Map<String, String> classIndex = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of(), Set.of(), classIndex, gaToJar,
+                List.of(dep), List.of());
 
         // Should be UNDETERMINED (no classes in index), NOT USED
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:runtime-lib", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:runtime-lib",
+                DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
     }
 
     @Test
@@ -362,13 +340,12 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of("com.example:test-runtime-lib", tempJar.toFile());
         Map<String, String> classIndex = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of(), Set.of(), classIndex, gaToJar,
+                List.of(dep), List.of());
 
         // Should be UNDETERMINED (no classes in index), NOT USED
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:test-runtime-lib", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:test-runtime-lib",
+                DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
     }
 
     @Test
@@ -381,12 +358,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of("com.example:lib", tempJar.toFile());
         Map<String, String> classIndex = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of("com.example.SomeService"), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of("com.example.SomeService"), Set.of(),
+                classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:lib", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:lib",
+                DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
     }
 
     @Test
@@ -398,12 +374,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of("com.example:sisu-lib", tempJar.toFile());
         Map<String, String> classIndex = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of("javax.inject.Named"), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of("javax.inject.Named"), Set.of(),
+                classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:sisu-lib", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:sisu-lib",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -415,18 +390,12 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of("com.example:spring-lib", tempJar.toFile());
         Map<String, String> classIndex = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(
-                        Set.of("org.springframework.stereotype.Component"),
-                        Set.of(),
-                        classIndex,
-                        gaToJar,
-                        List.of(dep),
-                        List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(
+                Set.of("org.springframework.stereotype.Component"), Set.of(), classIndex, gaToJar, List.of(dep),
+                List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:spring-lib", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:spring-lib",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -438,18 +407,12 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of("com.example:spring-boot-lib", tempJar.toFile());
         Map<String, String> classIndex = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(
-                        Set.of("org.springframework.boot.autoconfigure.EnableAutoConfiguration"),
-                        Set.of(),
-                        classIndex,
-                        gaToJar,
-                        List.of(dep),
-                        List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(
+                Set.of("org.springframework.boot.autoconfigure.EnableAutoConfiguration"), Set.of(), classIndex, gaToJar,
+                List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:spring-boot-lib", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:spring-boot-lib",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -461,12 +424,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of("com.example:unused-svc", tempJar.toFile());
         Map<String, String> classIndex = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of("com.other.Unrelated"), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of("com.other.Unrelated"), Set.of(),
+                classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:unused-svc", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:unused-svc",
+                DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
     }
 
     // --- Allowlist tests ---
@@ -478,13 +440,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, String> classIndex = Map.of("org.postgresql.Driver", "org.postgresql:postgresql");
         Map<String, File> gaToJar = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .runtimeArtifacts(Set.of("org.postgresql:postgresql"))
-                .build()
+        var result = DependencyUsageAnalyzer.builder().runtimeArtifacts(Set.of("org.postgresql:postgresql")).build()
                 .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("org.postgresql:postgresql", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("org.postgresql:postgresql",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -494,13 +454,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, String> classIndex = Map.of("oracle.jdbc.OracleDriver", "com.oracle.database.jdbc:ojdbc11");
         Map<String, File> gaToJar = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .runtimeArtifacts(Set.of("com.oracle.database.jdbc:*"))
-                .build()
+        var result = DependencyUsageAnalyzer.builder().runtimeArtifacts(Set.of("com.oracle.database.jdbc:*")).build()
                 .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.oracle.database.jdbc:ojdbc11", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("com.oracle.database.jdbc:ojdbc11",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -510,13 +468,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, String> classIndex = Map.of();
         Map<String, File> gaToJar = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .runtimeArtifacts(Set.of("org.postgresql:postgresql"))
-                .build()
+        var result = DependencyUsageAnalyzer.builder().runtimeArtifacts(Set.of("org.postgresql:postgresql")).build()
                 .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("org.postgresql:postgresql", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("org.postgresql:postgresql",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -526,13 +482,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, String> classIndex = Map.of("com.example.Foo", "com.example:not-allowlisted");
         Map<String, File> gaToJar = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .runtimeArtifacts(Set.of("org.postgresql:postgresql"))
-                .build()
+        var result = DependencyUsageAnalyzer.builder().runtimeArtifacts(Set.of("org.postgresql:postgresql")).build()
                 .analyze(Set.of("com.other.Unrelated"), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:not-allowlisted", DependencyUsageAnalyzer.UsageStatus.UNUSED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:not-allowlisted",
+                DependencyUsageAnalyzer.UsageStatus.UNUSED);
     }
 
     @Test
@@ -542,13 +496,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, String> classIndex = Map.of("lombok.Getter", "org.projectlombok:lombok");
         Map<String, File> gaToJar = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .annotationOnlyArtifacts(Set.of("org.projectlombok:lombok"))
-                .build()
-                .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().annotationOnlyArtifacts(Set.of("org.projectlombok:lombok"))
+                .build().analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("org.projectlombok:lombok", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("org.projectlombok:lombok",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -559,13 +511,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, String> classIndex = Map.of();
         Map<String, File> gaToJar = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .annotationOnlyArtifacts(Set.of("org.projectlombok:lombok"))
-                .build()
-                .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().annotationOnlyArtifacts(Set.of("org.projectlombok:lombok"))
+                .build().analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("org.projectlombok:lombok", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("org.projectlombok:lombok",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -576,12 +526,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of();
 
         var result = DependencyUsageAnalyzer.builder()
-                .reflectionLoadedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver")))
-                .build()
+                .reflectionLoadedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver"))).build()
                 .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("org.postgresql:postgresql", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("org.postgresql:postgresql",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
@@ -593,12 +542,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of();
 
         var result = DependencyUsageAnalyzer.builder()
-                .reflectionLoadedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver")))
-                .build()
+                .reflectionLoadedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver"))).build()
                 .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("org.postgresql:postgresql", DependencyUsageAnalyzer.UsageStatus.UNUSED);
+        assertThat(result.declaredUsage()).containsEntry("org.postgresql:postgresql",
+                DependencyUsageAnalyzer.UsageStatus.UNUSED);
     }
 
     @Test
@@ -610,26 +558,23 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of();
 
         var result = DependencyUsageAnalyzer.builder()
-                .reflectionLoadedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver")))
-                .build()
+                .reflectionLoadedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver"))).build()
                 .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("org.postgresql:postgresql", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        assertThat(result.declaredUsage()).containsEntry("org.postgresql:postgresql",
+                DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
     }
 
     @Test
     void matchesArtifactPatternExact() {
-        assertThat(DependencyUsageAnalyzer.matchesArtifactPattern(
-                        "org.slf4j:slf4j-simple", Set.of("org.slf4j:slf4j-simple")))
-                .isTrue();
+        assertThat(DependencyUsageAnalyzer.matchesArtifactPattern("org.slf4j:slf4j-simple",
+                Set.of("org.slf4j:slf4j-simple"))).isTrue();
     }
 
     @Test
     void matchesArtifactPatternWildcard() {
-        assertThat(DependencyUsageAnalyzer.matchesArtifactPattern(
-                        "com.oracle.database.jdbc:ojdbc11", Set.of("com.oracle.database.jdbc:*")))
-                .isTrue();
+        assertThat(DependencyUsageAnalyzer.matchesArtifactPattern("com.oracle.database.jdbc:ojdbc11",
+                Set.of("com.oracle.database.jdbc:*"))).isTrue();
     }
 
     @Test
@@ -655,8 +600,7 @@ class DependencyUsageAnalyzerTest {
 
     @Test
     void matchesArtifactPatternEmptySet() {
-        assertThat(DependencyUsageAnalyzer.matchesArtifactPattern("com.example:lib", Set.of()))
-                .isFalse();
+        assertThat(DependencyUsageAnalyzer.matchesArtifactPattern("com.example:lib", Set.of())).isFalse();
     }
 
     @Test
@@ -668,23 +612,16 @@ class DependencyUsageAnalyzerTest {
 
         var dep = new DependenciesTui.DepEntry("org.apache.maven", "maven-jline", "", "4.0", "compile", true);
         Map<String, File> gaToJar = Map.of("org.apache.maven:maven-jline", tempJar.toFile());
-        Map<String, String> classIndex =
-                Map.of("org.apache.maven.jline.DefaultPrompter", "org.apache.maven:maven-jline");
+        Map<String, String> classIndex = Map.of("org.apache.maven.jline.DefaultPrompter",
+                "org.apache.maven:maven-jline");
 
         // Consumer does not reference "org.apache.maven.api.di.Inject" or any maven-jline class
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(
-                        Set.of("org.apache.maven.impl.SomeOtherClass"),
-                        Set.of(),
-                        classIndex,
-                        gaToJar,
-                        List.of(dep),
-                        List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of("org.apache.maven.impl.SomeOtherClass"),
+                Set.of(), classIndex, gaToJar, List.of(dep), List.of());
 
         // Should be UNDETERMINED, not UNUSED — DI container wires at runtime, not via bytecode
-        assertThat(result.declaredUsage())
-                .containsEntry("org.apache.maven:maven-jline", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        assertThat(result.declaredUsage()).containsEntry("org.apache.maven:maven-jline",
+                DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
     }
 
     @Test
@@ -699,12 +636,11 @@ class DependencyUsageAnalyzerTest {
         Map<String, String> classIndex = Map.of("com.example.MyComponent", "com.example:sisu-component");
 
         // Consumer does not reference "javax.inject.Named" or any component class
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of("com.other.Unrelated"), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of("com.other.Unrelated"), Set.of(),
+                classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("com.example:sisu-component", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:sisu-component",
+                DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
     }
 
     @Test
@@ -717,26 +653,18 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of("org.apache.maven:maven-di", tempJar.toFile());
         Map<String, String> classIndex = Map.of();
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(
-                        Set.of("org.apache.maven.api.di.Inject"),
-                        Set.of(),
-                        classIndex,
-                        gaToJar,
-                        List.of(dep),
-                        List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of("org.apache.maven.api.di.Inject"),
+                Set.of(), classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage())
-                .containsEntry("org.apache.maven:maven-di", DependencyUsageAnalyzer.UsageStatus.USED);
+        assertThat(result.declaredUsage()).containsEntry("org.apache.maven:maven-di",
+                DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     @Test
     void mavenDiEntryDetectedByHasMavenDiOrSisu(@TempDir Path tempDir) throws Exception {
         Path tempJar = tempDir.resolve("maven-di.jar");
         createJarWithEntries(tempJar, "META-INF/maven/org.apache.maven.api.di.Inject");
-        assertThat(DependencyUsageAnalyzer.hasMavenDiOrSisuRegistration(tempJar.toFile()))
-                .isTrue();
+        assertThat(DependencyUsageAnalyzer.hasMavenDiOrSisuRegistration(tempJar.toFile())).isTrue();
     }
 
     @Test
@@ -744,8 +672,7 @@ class DependencyUsageAnalyzerTest {
         // META-INF/maven/org.apache.maven/maven-jline/pom.xml is POM metadata, not a DI index
         Path tempJar = tempDir.resolve("regular.jar");
         createJarWithEntries(tempJar, "META-INF/maven/org.apache.maven/maven-jline/pom.xml");
-        assertThat(DependencyUsageAnalyzer.hasMavenDiOrSisuRegistration(tempJar.toFile()))
-                .isFalse();
+        assertThat(DependencyUsageAnalyzer.hasMavenDiOrSisuRegistration(tempJar.toFile())).isFalse();
     }
 
     @Test
@@ -758,21 +685,62 @@ class DependencyUsageAnalyzerTest {
     }
 
     @Test
-    void serviceLoaderOnlyWithoutBytecodeRefIsNotUndetermined(@TempDir Path tempDir) throws Exception {
-        // ServiceLoader-only dep: hasMavenDiOrSisu=false → classifyByRuntimeDiscovery returns null
-        // Falls through to depClasses check → UNUSED (not UNDETERMINED)
+    void serviceLoaderOnlyWithoutBytecodeRefIsUndetermined(@TempDir Path tempDir) throws Exception {
+        // ServiceLoader-only dep: hasMavenDiOrSisu=false but has META-INF/services/<X> →
+        // classifyByRuntimeDiscovery returns UNDETERMINED (bytecode analysis can't verify
+        // whether a ServiceLoader-based provider is actually consumed at runtime).
         Path tempJar = tempDir.resolve("svc.jar");
         createJarWithEntries(tempJar, "META-INF/services/com.example.SomeService");
 
         var dep = new DependenciesTui.DepEntry("com.example", "svc", "", "1.0", "compile", true);
         Map<String, File> gaToJar = Map.of("com.example:svc", tempJar.toFile());
-        // classIndex has a class for the dep → depClasses != null → UNUSED (not UNDETERMINED)
         Map<String, String> classIndex = Map.of("com.example.SomeService", "com.example:svc");
 
-        var result = DependencyUsageAnalyzer.builder()
-                .build()
-                .analyze(Set.of("com.other.Unrelated"), Set.of(), classIndex, gaToJar, List.of(dep), List.of());
+        var result = DependencyUsageAnalyzer.builder().build().analyze(Set.of("com.other.Unrelated"), Set.of(),
+                classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage()).containsEntry("com.example:svc", DependencyUsageAnalyzer.UsageStatus.UNUSED);
+        assertThat(result.declaredUsage()).containsEntry("com.example:svc",
+                DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
+    // --- SLF4J binding / logging backend false-positive reproducer ---
+
+    /**
+     * Reproducer for the SLF4J binding false-positive.
+     * <p>
+     * {@code log4j-slf4j2-impl} ships {@code META-INF/services/org.slf4j.spi.SLF4JServiceProvider}, which is loaded by
+     * the SLF4J framework at runtime via {@link java.util.ServiceLoader}. The consuming module (e.g.
+     * {@code camel-timer}) never references {@code org.slf4j.spi.SLF4JServiceProvider} directly in its bytecode — SLF4J
+     * does that internally. Pilot's {@code classifyByRuntimeDiscovery} detects the service entry but, because the
+     * consumer has no bytecode reference to the service interface, falls through to the
+     * {@code depClasses != null → UNUSED} branch and reports it as unused.
+     * <p>
+     * Expected: a pure ServiceLoader implementation binding declared with test scope and providing no bytecode
+     * reference in the consumer should be classified as {@link DependencyUsageAnalyzer.UsageStatus#UNDETERMINED}
+     * (cannot be verified from bytecode), not {@link DependencyUsageAnalyzer.UsageStatus#UNUSED}.
+     */
+    @Test
+    void slf4jBindingViaServiceLoaderShouldNotBeUnused(@TempDir Path tempDir) throws Exception {
+        // Simulates log4j-slf4j2-impl: has META-INF/services/org.slf4j.spi.SLF4JServiceProvider
+        // but the consumer never imports that interface directly.
+        Path tempJar = tempDir.resolve("log4j-slf4j2-impl.jar");
+        createJarWithEntries(tempJar, "META-INF/services/org.slf4j.spi.SLF4JServiceProvider",
+                "org/apache/logging/slf4j/Log4jLoggerFactory.class");
+
+        var dep = new DependenciesTui.DepEntry("org.apache.logging.log4j", "log4j-slf4j2-impl", "", "2.25", "test",
+                true);
+        Map<String, File> gaToJar = Map.of("org.apache.logging.log4j:log4j-slf4j2-impl", tempJar.toFile());
+        Map<String, String> classIndex = Map.of("org.apache.logging.slf4j.Log4jLoggerFactory",
+                "org.apache.logging.log4j:log4j-slf4j2-impl");
+
+        // Consumer (e.g. camel-timer) does not reference SLF4JServiceProvider or any log4j class
+        var result = DependencyUsageAnalyzer.builder().build().analyze(
+                Set.of("org.apache.camel.component.timer.TimerConsumer"), Set.of(), classIndex, gaToJar, List.of(dep),
+                List.of());
+
+        // Should NOT be UNUSED — it is a ServiceLoader-based SLF4J backend.
+        // Acceptable statuses: USED (preferred) or UNDETERMINED.
+        assertThat(result.declaredUsage().get("org.apache.logging.log4j:log4j-slf4j2-impl"))
+                .isNotEqualTo(DependencyUsageAnalyzer.UsageStatus.UNUSED);
     }
 }

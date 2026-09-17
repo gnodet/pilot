@@ -21,8 +21,11 @@ package eu.maveniverse.maven.pilot.mvn3;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import eu.maveniverse.maven.pilot.DependenciesTui;
+import eu.maveniverse.maven.pilot.DependencyUsageAnalyzer;
 import java.io.File;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -33,6 +36,7 @@ import org.apache.maven.model.InputSource;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class DependenciesMojoTest {
 
@@ -312,5 +316,50 @@ class DependenciesMojoTest {
         Map<String, String> result = DependenciesMojo.buildGaToRawVersionMap(proj);
 
         assertThat(result).containsEntry("com.example:lib:tests", "${testVersion}");
+    }
+
+    // --- executeNonInteractive with gaToRawVersion (fix action wiring) ---
+
+    @Test
+    void executeNonInteractiveFixWritesPropertyExpression(@TempDir Path tempDir) throws Exception {
+        // Exercises the full mojo→DependenciesReporter.fix() wiring:
+        // a non-empty gaToRawVersion must result in <version>${prop}</version> in the written POM.
+        Path pomPath = tempDir.resolve("pom.xml");
+        Files.writeString(pomPath, """
+                        <project>
+                          <dependencies>
+                            <dependency>
+                              <groupId>com.example</groupId>
+                              <artifactId>existing</artifactId>
+                              <version>1.0</version>
+                            </dependency>
+                          </dependencies>
+                        </project>
+                        """);
+
+        MavenProject proj = new MavenProject();
+        proj.setFile(pomPath.toFile());
+
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "fix");
+
+        // Transitive dep with property expression in ancestor DM
+        var transitive = new DependenciesTui.DepEntry(
+                "org.apache.maven.resolver", "maven-resolver-named-locks", "", "2.0.22", "compile", false);
+        transitive.usageStatus = DependencyUsageAnalyzer.UsageStatus.USED;
+
+        mojo.executeNonInteractive(
+                proj,
+                List.of(),
+                List.of(transitive),
+                Map.of("org.apache.maven.resolver:maven-resolver-named-locks", "2.0.22"),
+                Map.of("org.apache.maven.resolver:maven-resolver-named-locks", "${resolverVersion}"),
+                Set.of());
+
+        String result = Files.readString(pomPath);
+        assertThat(result).contains("maven-resolver-named-locks");
+        // Must write the property expression, NOT the resolved literal
+        assertThat(result).contains("<version>${resolverVersion}</version>");
+        assertThat(result).doesNotContain("<version>2.0.22</version>");
     }
 }

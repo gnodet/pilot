@@ -203,4 +203,21 @@ class DependenciesMojoTest {
 
         assertThat(result).containsExactly("com.other:lib:tests");
     }
+
+    @Test
+    void buildAncestorManagedGAs_nonNormalizedOwnPathExcluded() throws Exception {
+        // Regression: sourcePath from InputLocation may contain "." or ".." and must be normalized
+        // before comparison with ownPomPath (which is always normalized) to avoid falsely classifying
+        // the module's own DM entries as ancestor-managed.
+        File pomFile = Files.createTempFile("pom", ".xml").toFile();
+        // Construct a non-normalized equivalent: insert a redundant "." segment.
+        String nonNormalizedPath = pomFile.getParent() + "/." + "/" + pomFile.getName();
+
+        Dependency own = dep("com.example", "own-lib", "1.0", locFor(nonNormalizedPath));
+
+        Set<String> result = DependenciesMojo.buildAncestorManagedGAs(projectWithDM(pomFile, List.of(own)));
+
+        // own-lib must NOT appear in ancestorManagedGAs despite the non-normalized path
+        assertThat(result).doesNotContain("com.example:own-lib");
+    }
 }

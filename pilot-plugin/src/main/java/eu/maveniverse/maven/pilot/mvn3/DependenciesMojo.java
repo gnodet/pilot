@@ -221,8 +221,13 @@ public class DependenciesMojo extends AbstractMojo {
         }
         for (Dependency dep : proj.getModel().getDependencyManagement().getDependencies()) {
             InputLocation loc = dep.getLocation("");
-            String sourcePath =
+            String rawSourcePath =
                     (loc != null && loc.getSource() != null) ? loc.getSource().getLocation() : null;
+            // Normalize local file paths (which may contain "." or "..") before comparison.
+            // URL-style locations (containing "://") are left unchanged; they cannot match a local path.
+            String sourcePath = (rawSourcePath != null && !rawSourcePath.contains("://"))
+                    ? Path.of(rawSourcePath).normalize().toString()
+                    : rawSourcePath;
             if (sourcePath == null || !sourcePath.equals(ownPomPath)) {
                 String classifier = dep.getClassifier();
                 String ga = (classifier != null && !classifier.isEmpty())

@@ -22,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -30,9 +31,8 @@ class ClassFileScannerTest {
     @Test
     void scanDirectoryFindsClasses() throws Exception {
         Path testClasses = Path.of("target/test-classes");
-        if (!Files.isDirectory(testClasses)) {
-            return;
-        }
+        Assumptions.assumeTrue(
+                Files.isDirectory(testClasses), "target/test-classes not found — skipping bytecode scan test");
 
         ClassFileScanner.ScanResult result = ClassFileScanner.scanDirectory(testClasses);
 
@@ -43,9 +43,8 @@ class ClassFileScannerTest {
     @Test
     void scanDirectoryFindsMemberReferences() throws Exception {
         Path testClasses = Path.of("target/test-classes");
-        if (!Files.isDirectory(testClasses)) {
-            return;
-        }
+        Assumptions.assumeTrue(
+                Files.isDirectory(testClasses), "target/test-classes not found — skipping bytecode scan test");
 
         ClassFileScanner.ScanResult result = ClassFileScanner.scanDirectory(testClasses);
 
@@ -65,9 +64,8 @@ class ClassFileScannerTest {
     @Test
     void referencedClassesFiltersArrayDescriptors() throws Exception {
         Path mainClasses = Path.of("target/classes");
-        if (!Files.isDirectory(mainClasses)) {
-            return;
-        }
+        Assumptions.assumeTrue(
+                Files.isDirectory(mainClasses), "target/classes not found — skipping bytecode scan test");
 
         ClassFileScanner.ScanResult result = ClassFileScanner.scanDirectory(mainClasses);
 
@@ -93,17 +91,20 @@ class ClassFileScannerTest {
      *
      * <p>Specifically verifies:
      * <ul>
-     *   <li>Class-level annotation types are collected ({@code @Test} on methods in this class)</li>
+     *   <li>Method-level annotation types are collected ({@code @Test} on methods in this class)</li>
      *   <li>Field-level annotation types are collected ({@link org.junit.jupiter.api.io.TempDir}
-     *       on a field in {@link AnnotationFixture})</li>
+     *       on a field in {@link AnnotationFixture}) — tests {@code FieldVisitor.visitAnnotation}</li>
+     *   <li>Annotation element {@code Class[]} literals are collected
+     *       ({@link AnnotationFixture.NoopExtension} referenced as the value of {@code @ExtendWith}
+     *       on {@link AnnotationFixture}) — tests {@code annotationScanner().visit(name, Type)} +
+     *       {@code visitArray}</li>
      * </ul>
      */
     @Test
     void scanDetectsAnnotationOnlyDependencies() throws Exception {
         Path testClasses = Path.of("target/test-classes");
-        if (!Files.isDirectory(testClasses)) {
-            return;
-        }
+        Assumptions.assumeTrue(
+                Files.isDirectory(testClasses), "target/test-classes not found — skipping bytecode scan test");
 
         ClassFileScanner.ScanResult result = ClassFileScanner.scanDirectory(testClasses);
 
@@ -116,5 +117,11 @@ class ClassFileScannerTest {
         assertThat(result.referencedClasses())
                 .as("field-level annotation type @TempDir must be detected (regression: issue #158)")
                 .contains("org.junit.jupiter.api.io.TempDir");
+
+        // NoopExtension is a Class<?> literal in @ExtendWith(NoopExtension.class) on AnnotationFixture
+        // — tests the annotation element-value scanning path (visitArray + visit(name, Type))
+        assertThat(result.referencedClasses())
+                .as("Class[] annotation element value must be detected (regression: issue #158)")
+                .contains("eu.maveniverse.maven.pilot.AnnotationFixture$NoopExtension");
     }
 }

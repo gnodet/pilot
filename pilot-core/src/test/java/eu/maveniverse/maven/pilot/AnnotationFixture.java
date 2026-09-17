@@ -19,25 +19,33 @@
 package eu.maveniverse.maven.pilot;
 
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.extension.Extension;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Fixture class used by {@link ClassFileScannerAnnotationTest} to verify that the bytecode scanner
+ * Fixture class used by {@link ClassFileScannerTest} to verify that the bytecode scanner
  * correctly detects annotation types used exclusively through annotations (not in method/field
  * descriptors or call sites).
  *
  * <p>This class uses:
  * <ul>
- *   <li>{@link ExtendWith} as a <em>class-level</em> annotation (its value is a {@code Class[]}
- *       literal — tests annotation element value scanning)</li>
- *   <li>{@link TempDir} as a <em>field-level</em> annotation (tests field-annotation scanning)</li>
+ *   <li>{@link ExtendWith} as a <em>class-level</em> annotation whose {@code value()} is a
+ *       {@code Class[]} literal referencing {@link NoopExtension} — exercises the annotation
+ *       element-value scanning path ({@code annotationScanner().visit(name, Type)} +
+ *       {@code visitArray})</li>
+ *   <li>{@link TempDir} as a <em>field-level</em> annotation — exercises field-annotation
+ *       scanning (the {@code FieldVisitor.visitAnnotation} path)</li>
  * </ul>
  *
  * <p>Neither annotation type appears in any method/field descriptor or call site, so without the
  * fix they would be missed by the scanner.
  */
 @SuppressWarnings("unused")
+@ExtendWith(AnnotationFixture.NoopExtension.class)
 class AnnotationFixture {
+
+    /** No-op extension used as the {@code Class[]} literal value in {@code @ExtendWith}. */
+    public static class NoopExtension implements Extension {}
 
     /** Field whose only annotation is {@link TempDir} — tests field-annotation path. */
     @TempDir

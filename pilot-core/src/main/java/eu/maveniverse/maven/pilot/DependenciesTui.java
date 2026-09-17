@@ -354,15 +354,11 @@ public class DependenciesTui extends ToolPanel {
         this.reactorMode = false;
         this.treeTui = treeTui;
         this.dmTreeTui = dmTreeTui;
-        // Build undetermined list from both declared and transitive
+        // Build undetermined list from declared deps only — transitive deps are never
+        // directly managed by the project, so UNDETERMINED status on them is not actionable
         List<DepEntry> undeterminedList = new ArrayList<>();
         if (bytecodeAnalyzed) {
             for (var dep : declared) {
-                if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
-                    undeterminedList.add(dep);
-                }
-            }
-            for (var dep : transitive) {
                 if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
                     undeterminedList.add(dep);
                 }

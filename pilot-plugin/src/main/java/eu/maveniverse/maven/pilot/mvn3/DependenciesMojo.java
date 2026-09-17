@@ -369,22 +369,6 @@ public class DependenciesMojo extends AbstractMojo {
                 }
             }
         }
-        for (var dep : transitive) {
-            if (DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), knownUsedSet)) {
-                if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNUSED) {
-                    contradictions.add("'" + dep.ga() + "' is declared knownUsed but analyser found it UNUSED");
-                } else if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
-                    dep.usageStatus = DependencyUsageAnalyzer.UsageStatus.USED;
-                }
-            }
-            if (DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), knownUnusedSet)) {
-                if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.USED) {
-                    contradictions.add("'" + dep.ga() + "' is declared knownUnused but analyser found it USED");
-                } else if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
-                    dep.usageStatus = DependencyUsageAnalyzer.UsageStatus.UNUSED;
-                }
-            }
-        }
         if (!contradictions.isEmpty()) {
             StringBuilder msg = new StringBuilder("Stale knownUsed/knownUnused annotations detected:\n");
             for (String c : contradictions) {
@@ -415,11 +399,8 @@ public class DependenciesMojo extends AbstractMojo {
                 undetermined.add(dep);
             }
         }
-        for (var dep : transitive) {
-            if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
-                undetermined.add(dep);
-            }
-        }
+        // Transitive UNDETERMINED is not surfaced — the project never declared those deps,
+        // so their usage status is not actionable regardless.
 
         // --- Apply ignore-lists (remove false positives) ---
         Set<String> ignoredUnused = buildIgnoreSet(ignoredUnusedDeclared);

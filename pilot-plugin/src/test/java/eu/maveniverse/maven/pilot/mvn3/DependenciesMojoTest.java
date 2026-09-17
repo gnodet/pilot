@@ -467,7 +467,8 @@ class DependenciesMojoTest {
     void check_failsOnBothIssuesAndUndetermined(@TempDir Path tmp) throws Exception {
         var mojo = new DependenciesMojo(null);
         MojoTestHelper.setField(mojo, "action", "check");
-        // failOnUndetermined=false, but there are real issues → still fails
+        // failOnUndetermined=false, but there are real issues → still fails for the unused dep
+        // undetermined dep is hidden by default (showUndetermined=false)
 
         var unused =
                 depWithStatus("com.example", "unused-lib", "compile", true, DependencyUsageAnalyzer.UsageStatus.UNUSED);
@@ -478,6 +479,35 @@ class DependenciesMojoTest {
         assertThatThrownBy(() -> mojo.executeNonInteractive(proj, List.of(unused, undetermined), List.of(), Map.of()))
                 .isInstanceOf(MojoFailureException.class)
                 .hasMessageContaining("com.example:unused-lib")
-                .hasMessageContaining("com.example:resource-jar");
+                // undetermined is hidden (showUndetermined defaults to false)
+                .hasMessageNotContaining("com.example:resource-jar");
+    }
+
+    @Test
+    void check_showsUndeterminedWhenFlagSet(@TempDir Path tmp) throws Exception {
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+        MojoTestHelper.setField(mojo, "showUndetermined", true);
+
+        var dep = depWithStatus(
+                "com.example", "resource-jar", "compile", true, DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        MavenProject proj = tempProject(tmp);
+
+        // showUndetermined=true, failOnUndetermined=false → warns but does not fail
+        mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of());
+    }
+
+    @Test
+    void report_hidesUndeterminedByDefault(@TempDir Path tmp) throws Exception {
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "report");
+        // showUndetermined defaults to false
+
+        var dep = depWithStatus(
+                "com.example", "resource-jar", "compile", true, DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        MavenProject proj = tempProject(tmp);
+
+        // Only undetermined dep, hidden by default → no issues → clean exit
+        mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of());
     }
 }

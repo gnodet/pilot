@@ -48,7 +48,8 @@ import org.eclipse.aether.resolution.DependencyResult;
  *
  * <p>Three actions via {@code -Dpilot.action}:</p>
  * <ul>
- *   <li><b>report</b> (default) — prints unused declared and used transitive dependencies without failing</li>
+ *   <li><b>report</b> (default) — prints unused declared, used transitive, and undetermined
+ *       dependencies without failing</li>
  *   <li><b>check</b> — reports issues and fails the build if any are found</li>
  *   <li><b>fix</b> — removes unused declared and adds used transitive dependencies to the POM</li>
  * </ul>
@@ -63,12 +64,19 @@ import org.eclipse.aether.resolution.DependencyResult;
  * and the project declares test-scoped dependencies, the mojo fails — use
  * {@code -Dpilot.skipTestScope=true} to skip test-scope analysis entirely.</p>
  *
+ * <p>Dependencies whose usage <em>cannot</em> be determined (e.g. resource-only JARs, deps
+ * without any classes) are reported as <em>undetermined</em>. Use {@code knownUsed} and
+ * {@code knownUnused} to annotate them explicitly. Annotating a dep whose status is already
+ * confidently known (USED or UNUSED) as the opposite is treated as an error — it means the
+ * annotation is stale.</p>
+ *
  * <p>Usage:</p>
  * <pre>
- * mvn package pilot:dependencies                              # full analysis (recommended)
+ * mvn package pilot:dependencies                                   # full analysis (recommended)
  * mvn package pilot:dependencies -Dpilot.action=check
+ * mvn package pilot:dependencies -Dpilot.action=check -Dpilot.failOnUndetermined=true
  * mvn package pilot:dependencies -Dpilot.action=fix
- * mvn compile pilot:dependencies -Dpilot.skipTestScope=true  # skip test-scope analysis
+ * mvn compile pilot:dependencies -Dpilot.skipTestScope=true        # skip test-scope analysis
  * </pre>
  *
  * @since 0.1.0
@@ -111,6 +119,50 @@ public class DependenciesMojo extends AbstractMojo {
 
     @Parameter
     private List<String> ignoredUsedTransitive;
+
+    /**
+     * Dependencies explicitly declared as used, overriding the bytecode analyser result.
+     *
+     * <p>Each entry is a {@code groupId:artifactId} pattern (same syntax as
+     * {@code ignoredUnusedDeclared}). Matching dependencies whose status is
+     * {@code UNDETERMINED} are treated as {@code USED} — they will not appear in
+     * the undetermined list and will not be removed by the fix action.</p>
+     *
+     * <p>It is an error to mark a dependency as {@code knownUsed} when the analyser
+     * has already confidently determined it to be {@code UNUSED}: the annotation is
+     * stale and the build fails with a descriptive message.</p>
+     *
+     * @since 0.4.0
+     */
+    @Parameter
+    private List<String> knownUsed;
+
+    /**
+     * Dependencies explicitly declared as unused, overriding the bytecode analyser result.
+     *
+     * <p>Each entry is a {@code groupId:artifactId} pattern (same syntax as
+     * {@code ignoredUnusedDeclared}). Matching dependencies whose status is
+     * {@code UNDETERMINED} are treated as {@code UNUSED} — they will appear in the
+     * unused-declared list and can be removed by the fix action.</p>
+     *
+     * <p>It is an error to mark a dependency as {@code knownUnused} when the analyser
+     * has already confidently determined it to be {@code USED}: the annotation is
+     * stale and the build fails with a descriptive message.</p>
+     *
+     * @since 0.4.0
+     */
+    @Parameter
+    private List<String> knownUnused;
+
+    /**
+     * When {@code true} and {@code action=check}, fail the build if any dependencies
+     * remain {@code UNDETERMINED} after applying {@code knownUsed}/{@code knownUnused}
+     * overrides. Useful in CI to enforce that every dependency is explicitly accounted for.
+     *
+     * @since 0.4.0
+     */
+    @Parameter(property = "pilot.failOnUndetermined", defaultValue = "false")
+    boolean failOnUndetermined = false;
 
     private final RepositorySystem repoSystem;
 
@@ -295,6 +347,54 @@ public class DependenciesMojo extends AbstractMojo {
             Map<String, String> gaToVersion,
             Set<String> ancestorManagedGAs)
             throws Exception {
+
+        // --- Apply knownUsed / knownUnused overrides ---
+        Set<String> knownUsedSet = buildIgnoreSet(knownUsed);
+        Set<String> knownUnusedSet = buildIgnoreSet(knownUnused);
+
+        List<String> contradictions = new ArrayList<>();
+        for (var dep : declared) {
+            if (DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), knownUsedSet)) {
+                if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNUSED) {
+                    contradictions.add("'" + dep.ga() + "' is declared knownUsed but analyser found it UNUSED");
+                } else if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
+                    dep.usageStatus = DependencyUsageAnalyzer.UsageStatus.USED;
+                }
+            }
+            if (DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), knownUnusedSet)) {
+                if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.USED) {
+                    contradictions.add("'" + dep.ga() + "' is declared knownUnused but analyser found it USED");
+                } else if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
+                    dep.usageStatus = DependencyUsageAnalyzer.UsageStatus.UNUSED;
+                }
+            }
+        }
+        for (var dep : transitive) {
+            if (DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), knownUsedSet)) {
+                if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNUSED) {
+                    contradictions.add("'" + dep.ga() + "' is declared knownUsed but analyser found it UNUSED");
+                } else if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
+                    dep.usageStatus = DependencyUsageAnalyzer.UsageStatus.USED;
+                }
+            }
+            if (DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), knownUnusedSet)) {
+                if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.USED) {
+                    contradictions.add("'" + dep.ga() + "' is declared knownUnused but analyser found it USED");
+                } else if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
+                    dep.usageStatus = DependencyUsageAnalyzer.UsageStatus.UNUSED;
+                }
+            }
+        }
+        if (!contradictions.isEmpty()) {
+            StringBuilder msg = new StringBuilder("Stale knownUsed/knownUnused annotations detected:\n");
+            for (String c : contradictions) {
+                msg.append("  - ").append(c).append("\n");
+            }
+            msg.append("Remove or update the annotation to match the actual usage.");
+            throw new MojoFailureException(msg.toString());
+        }
+
+        // --- Bucket deps by status ---
         List<DependenciesTui.DepEntry> unusedDeclared = new ArrayList<>();
         for (var dep : declared) {
             if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNUSED) {
@@ -309,12 +409,25 @@ public class DependenciesMojo extends AbstractMojo {
             }
         }
 
+        List<DependenciesTui.DepEntry> undetermined = new ArrayList<>();
+        for (var dep : declared) {
+            if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
+                undetermined.add(dep);
+            }
+        }
+        for (var dep : transitive) {
+            if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
+                undetermined.add(dep);
+            }
+        }
+
+        // --- Apply ignore-lists (remove false positives) ---
         Set<String> ignoredUnused = buildIgnoreSet(ignoredUnusedDeclared);
         Set<String> ignoredTransitive = buildIgnoreSet(ignoredUsedTransitive);
         unusedDeclared.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredUnused));
         usedTransitive.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredTransitive));
 
-        if (unusedDeclared.isEmpty() && usedTransitive.isEmpty()) {
+        if (unusedDeclared.isEmpty() && usedTransitive.isEmpty() && undetermined.isEmpty()) {
             getLog().info("No dependency issues found.");
             return;
         }
@@ -328,9 +441,19 @@ public class DependenciesMojo extends AbstractMojo {
                         gaToVersion,
                         ancestorManagedGAs,
                         getLog()::info);
-            case "report" -> getLog().warn(DependenciesReporter.formatFindings(unusedDeclared, usedTransitive));
-            default ->
-                throw new MojoFailureException(DependenciesReporter.formatCheckFailure(unusedDeclared, usedTransitive));
+            case "report" ->
+                getLog().warn(DependenciesReporter.formatFindings(unusedDeclared, usedTransitive, undetermined));
+            default -> {
+                boolean hasIssues = !unusedDeclared.isEmpty() || !usedTransitive.isEmpty();
+                boolean hasUndetermined = !undetermined.isEmpty();
+                if (hasIssues || (hasUndetermined && failOnUndetermined)) {
+                    throw new MojoFailureException(
+                            DependenciesReporter.formatCheckFailure(unusedDeclared, usedTransitive, undetermined));
+                } else if (hasUndetermined) {
+                    // undetermined only — warn but don't fail (failOnUndetermined=false)
+                    getLog().warn(DependenciesReporter.formatFindings(unusedDeclared, usedTransitive, undetermined));
+                }
+            }
         }
     }
 

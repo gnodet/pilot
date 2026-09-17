@@ -131,6 +131,59 @@ class DependenciesReporterTest {
         assertThat(output).isEmpty();
     }
 
+    @Test
+    void formatFindingsUndeterminedOnly() {
+        var dep = new DependenciesTui.DepEntry("com.example", "mystery-jar", "", "1.0", "compile", true);
+
+        String output = DependenciesReporter.formatFindings(List.of(), List.of(), List.of(dep));
+
+        assertThat(output)
+                .contains("Undetermined dependency (usage could not be determined")
+                .contains("com.example:mystery-jar")
+                .doesNotContain("Unused declared")
+                .doesNotContain("Used transitive");
+    }
+
+    @Test
+    void formatFindingsAllThreeSections() {
+        var unused = new DependenciesTui.DepEntry("com.example", "unused", "", "1.0", "compile", true);
+        var transitive = new DependenciesTui.DepEntry("com.transitive", "needed", "", "2.0", "runtime", false);
+        var undetermined = new DependenciesTui.DepEntry("com.example", "mystery", "", "3.0", "compile", true);
+
+        String output =
+                DependenciesReporter.formatFindings(List.of(unused), List.of(transitive), List.of(undetermined));
+
+        assertThat(output)
+                .contains("Unused declared dependency")
+                .contains("com.example:unused")
+                .contains("Used transitive dependency")
+                .contains("com.transitive:needed (runtime)")
+                .contains("Undetermined dependency")
+                .contains("com.example:mystery");
+    }
+
+    @Test
+    void formatFindingsMultipleUndetermined() {
+        var dep1 = new DependenciesTui.DepEntry("com.a", "one", "", "1.0", "compile", true);
+        var dep2 = new DependenciesTui.DepEntry("com.b", "two", "", "1.0", "test", false);
+
+        String output = DependenciesReporter.formatFindings(List.of(), List.of(), List.of(dep1, dep2));
+
+        assertThat(output)
+                .contains("Undetermined dependencies (usage could not be determined")
+                .contains("com.a:one")
+                .contains("com.b:two (test)");
+    }
+
+    @Test
+    void formatCheckFailureWithUndetermined() {
+        var dep = new DependenciesTui.DepEntry("com.example", "mystery", "", "1.0", "compile", true);
+
+        String msg = DependenciesReporter.formatCheckFailure(List.of(), List.of(), List.of(dep));
+
+        assertThat(msg).contains("com.example:mystery").contains("Undetermined").contains("pilot.action=fix");
+    }
+
     // -- fix --
 
     @Test

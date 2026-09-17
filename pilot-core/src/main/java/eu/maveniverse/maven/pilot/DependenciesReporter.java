@@ -47,6 +47,20 @@ public final class DependenciesReporter {
      */
     public static String formatFindings(
             List<DependenciesTui.DepEntry> unusedDeclared, List<DependenciesTui.DepEntry> usedTransitive) {
+        return formatFindings(unusedDeclared, usedTransitive, List.of());
+    }
+
+    /**
+     * Format a text report of dependency findings, including undetermined dependencies.
+     *
+     * @param unusedDeclared   declared dependencies confirmed unused (can be removed)
+     * @param usedTransitive   transitive dependencies confirmed used (should be declared)
+     * @param undetermined     dependencies whose usage could not be determined
+     */
+    public static String formatFindings(
+            List<DependenciesTui.DepEntry> unusedDeclared,
+            List<DependenciesTui.DepEntry> usedTransitive,
+            List<DependenciesTui.DepEntry> undetermined) {
         StringBuilder sb = new StringBuilder();
         if (!unusedDeclared.isEmpty()) {
             sb.append("Unused declared dependenc");
@@ -71,6 +85,19 @@ public final class DependenciesReporter {
                 sb.append("\n");
             }
         }
+        if (!undetermined.isEmpty()) {
+            if (!unusedDeclared.isEmpty() || !usedTransitive.isEmpty()) {
+                sb.append("\n");
+            }
+            sb.append("Undetermined dependenc");
+            sb.append(undetermined.size() == 1 ? "y" : "ies");
+            sb.append(" (usage could not be determined — use knownUsed/knownUnused to resolve):\n");
+            for (var dep : undetermined) {
+                sb.append("  - ").append(dep.ga());
+                appendScope(sb, dep);
+                sb.append("\n");
+            }
+        }
         return sb.toString();
     }
 
@@ -79,7 +106,17 @@ public final class DependenciesReporter {
      */
     public static String formatCheckFailure(
             List<DependenciesTui.DepEntry> unusedDeclared, List<DependenciesTui.DepEntry> usedTransitive) {
-        return formatFindings(unusedDeclared, usedTransitive)
+        return formatCheckFailure(unusedDeclared, usedTransitive, List.of());
+    }
+
+    /**
+     * Format a check-failure message, including undetermined dependencies.
+     */
+    public static String formatCheckFailure(
+            List<DependenciesTui.DepEntry> unusedDeclared,
+            List<DependenciesTui.DepEntry> usedTransitive,
+            List<DependenciesTui.DepEntry> undetermined) {
+        return formatFindings(unusedDeclared, usedTransitive, undetermined)
                 + "\nRun with -Dpilot.action=fix to apply changes, or configure allowlists for false positives.";
     }
 

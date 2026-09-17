@@ -311,4 +311,153 @@ class DependenciesMojoTest {
         // Guard must NOT throw MojoExecutionException — it will NPE deeper in repoSystem
         assertThatThrownBy(() -> mojo.executeForProject(proj)).isNotInstanceOf(MojoExecutionException.class);
     }
+
+    // --- knownUsed / knownUnused override ---
+
+    private static MavenProject tempProject(Path tmp) throws Exception {
+        MavenProject proj = new MavenProject();
+        proj.setFile(Files.createTempFile(tmp, "pom", ".xml").toFile());
+        return proj;
+    }
+
+    private static DependenciesTui.DepEntry depWithStatus(
+            String groupId,
+            String artifactId,
+            String scope,
+            boolean declared,
+            DependencyUsageAnalyzer.UsageStatus status) {
+        var dep = new DependenciesTui.DepEntry(groupId, artifactId, "", "1.0", scope, declared);
+        dep.usageStatus = status;
+        return dep;
+    }
+
+    @Test
+    void knownUsed_promotesUndeterminedToUsed(@TempDir Path tmp) throws Exception {
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+        MojoTestHelper.setField(mojo, "knownUsed", List.of("com.example:resource-only"));
+
+        var dep = depWithStatus(
+                "com.example", "resource-only", "compile", true, DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        MavenProject proj = tempProject(tmp);
+
+        // After override, dep becomes USED → no issues → no failure
+        mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of());
+        assertThat(dep.usageStatus).isEqualTo(DependencyUsageAnalyzer.UsageStatus.USED);
+    }
+
+    @Test
+    void knownUnused_promotesUndeterminedToUnused(@TempDir Path tmp) throws Exception {
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+        MojoTestHelper.setField(mojo, "knownUnused", List.of("com.example:dead-dep"));
+
+        var dep = depWithStatus(
+                "com.example", "dead-dep", "compile", true, DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        MavenProject proj = tempProject(tmp);
+
+        // After override, dep becomes UNUSED → appears in unusedDeclared → check fails
+        assertThatThrownBy(() -> mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of()))
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("com.example:dead-dep");
+    }
+
+    @Test
+    void knownUsed_conflictsWithAnalyserUnused_failsWithContradictionError(@TempDir Path tmp) throws Exception {
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+        MojoTestHelper.setField(mojo, "knownUsed", List.of("com.example:stale-annotation"));
+
+        var dep = depWithStatus(
+                "com.example", "stale-annotation", "compile", true, DependencyUsageAnalyzer.UsageStatus.UNUSED);
+        MavenProject proj = tempProject(tmp);
+
+        assertThatThrownBy(() -> mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of()))
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("knownUsed")
+                .hasMessageContaining("UNUSED")
+                .hasMessageContaining("Stale");
+    }
+
+    @Test
+    void knownUnused_conflictsWithAnalyserUsed_failsWithContradictionError(@TempDir Path tmp) throws Exception {
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+        MojoTestHelper.setField(mojo, "knownUnused", List.of("com.example:actually-used"));
+
+        var dep = depWithStatus(
+                "com.example", "actually-used", "compile", true, DependencyUsageAnalyzer.UsageStatus.USED);
+        MavenProject proj = tempProject(tmp);
+
+        assertThatThrownBy(() -> mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of()))
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("knownUnused")
+                .hasMessageContaining("USED")
+                .hasMessageContaining("Stale");
+    }
+
+    @Test
+    void knownUsed_noEffectOnAlreadyUsedDep(@TempDir Path tmp) throws Exception {
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+        MojoTestHelper.setField(mojo, "knownUsed", List.of("com.example:already-used"));
+
+        var dep =
+                depWithStatus("com.example", "already-used", "compile", true, DependencyUsageAnalyzer.UsageStatus.USED);
+        MavenProject proj = tempProject(tmp);
+
+        // No contradiction, no issues → clean
+        mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of());
+        assertThat(dep.usageStatus).isEqualTo(DependencyUsageAnalyzer.UsageStatus.USED);
+    }
+
+    // --- failOnUndetermined ---
+
+    @Test
+    void check_doesNotFailOnUndeterminedByDefault(@TempDir Path tmp) throws Exception {
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+        // failOnUndetermined defaults to false
+
+        var dep = depWithStatus(
+                "com.example", "resource-jar", "compile", true, DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        MavenProject proj = tempProject(tmp);
+
+        // Only undetermined deps, failOnUndetermined=false → should NOT fail
+        mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of());
+    }
+
+    @Test
+    void check_failsOnUndetermined_whenFlagSet(@TempDir Path tmp) throws Exception {
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+        MojoTestHelper.setField(mojo, "failOnUndetermined", true);
+
+        var dep = depWithStatus(
+                "com.example", "resource-jar", "compile", true, DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        MavenProject proj = tempProject(tmp);
+
+        assertThatThrownBy(() -> mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of()))
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("com.example:resource-jar")
+                .hasMessageContaining("Undetermined");
+    }
+
+    @Test
+    void check_failsOnBothIssuesAndUndetermined(@TempDir Path tmp) throws Exception {
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+        // failOnUndetermined=false, but there are real issues → still fails
+
+        var unused =
+                depWithStatus("com.example", "unused-lib", "compile", true, DependencyUsageAnalyzer.UsageStatus.UNUSED);
+        var undetermined = depWithStatus(
+                "com.example", "resource-jar", "compile", true, DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        MavenProject proj = tempProject(tmp);
+
+        assertThatThrownBy(() -> mojo.executeNonInteractive(proj, List.of(unused, undetermined), List.of(), Map.of()))
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("com.example:unused-lib")
+                .hasMessageContaining("com.example:resource-jar");
+    }
 }

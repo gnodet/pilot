@@ -303,7 +303,14 @@ class DependenciesTuiViewSwitchTest {
         // Reactor-mode DependenciesTui has UNUSED_DECLARED and USED_TRANSITIVE views (L232-233)
         Path pom = pomPath();
         DependenciesTui tui = new DependenciesTui(
-                List.of(), List.of(), "com.example:reactor:1.0", 1, 0, path -> new PomEditSession(pom), null);
+                List.of(),
+                List.of(),
+                List.of(),
+                "com.example:reactor:1.0",
+                1,
+                0,
+                path -> new PomEditSession(pom),
+                null);
         List<HelpOverlay.Section> sections = tui.helpSections();
         String allText = sections.stream()
                 .flatMap(s -> s.entries().stream())

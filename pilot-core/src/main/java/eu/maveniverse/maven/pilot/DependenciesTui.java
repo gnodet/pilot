@@ -220,7 +220,8 @@ public class DependenciesTui extends ToolPanel {
         MANAGED,
         DM_TREE,
         UNUSED_DECLARED,
-        USED_TRANSITIVE;
+        USED_TRANSITIVE,
+        UNDETERMINED;
 
         String label() {
             return switch (this) {
@@ -231,6 +232,7 @@ public class DependenciesTui extends ToolPanel {
                 case DM_TREE -> "DM Tree";
                 case UNUSED_DECLARED -> "Unused Declared";
                 case USED_TRANSITIVE -> "Used Transitive";
+                case UNDETERMINED -> "Undetermined";
             };
         }
     }
@@ -240,6 +242,7 @@ public class DependenciesTui extends ToolPanel {
     private final View[] views;
     private final List<DepEntry> declared;
     private final List<DepEntry> transitive;
+    private final List<DepEntry> undetermined;
     private final List<ManagedEntry> managed;
     private final String projectGav;
     private final boolean bytecodeAnalyzed;
@@ -351,10 +354,26 @@ public class DependenciesTui extends ToolPanel {
         this.reactorMode = false;
         this.treeTui = treeTui;
         this.dmTreeTui = dmTreeTui;
+        // Build undetermined list from both declared and transitive
+        List<DepEntry> undeterminedList = new ArrayList<>();
+        if (bytecodeAnalyzed) {
+            for (var dep : declared) {
+                if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
+                    undeterminedList.add(dep);
+                }
+            }
+            for (var dep : transitive) {
+                if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
+                    undeterminedList.add(dep);
+                }
+            }
+        }
+        this.undetermined = undeterminedList;
         List<View> v = new ArrayList<>();
         if (treeTui != null) v.add(View.TREE);
         v.add(View.DECLARED);
         v.add(View.TRANSITIVE);
+        if (bytecodeAnalyzed && !undeterminedList.isEmpty()) v.add(View.UNDETERMINED);
         v.add(View.MANAGED);
         if (dmTreeTui != null) v.add(View.DM_TREE);
         this.views = v.toArray(new View[0]);
@@ -370,6 +389,7 @@ public class DependenciesTui extends ToolPanel {
     public DependenciesTui(
             List<DepEntry> unusedDeclared,
             List<DepEntry> usedTransitive,
+            List<DepEntry> undetermined,
             String projectGav,
             int modulesScanned,
             int modulesSkipped,
@@ -386,12 +406,16 @@ public class DependenciesTui extends ToolPanel {
         this.reactorMode = true;
         this.treeTui = null;
         this.dmTreeTui = null;
-        this.views = new View[] {View.UNUSED_DECLARED, View.USED_TRANSITIVE};
+        this.undetermined = undetermined;
+        this.views = undetermined.isEmpty()
+                ? new View[] {View.UNUSED_DECLARED, View.USED_TRANSITIVE}
+                : new View[] {View.UNUSED_DECLARED, View.USED_TRANSITIVE, View.UNDETERMINED};
         this.view = views[0];
         this.sortState = new SortState(sortColumnCount());
         this.status = modulesScanned + " modules scanned"
                 + (modulesSkipped > 0 ? " (" + modulesSkipped + " skipped — not compiled)" : "") + ", "
-                + unusedDeclared.size() + " unused declared, " + usedTransitive.size() + " used transitive";
+                + unusedDeclared.size() + " unused declared, " + usedTransitive.size() + " used transitive"
+                + (undetermined.isEmpty() ? "" : ", " + undetermined.size() + " undetermined");
         if (!unusedDeclared.isEmpty()) {
             tableState.select(0);
         }
@@ -439,8 +463,10 @@ public class DependenciesTui extends ToolPanel {
             long usedTransitive = transitive.stream()
                     .filter(d -> d.usageStatus == DependencyUsageAnalyzer.UsageStatus.USED)
                     .count();
+            long undeterminedCount = undetermined.size();
             this.status = declared.size() + " declared (" + unused + " unused), " + transitive.size() + " transitive ("
-                    + usedTransitive + " used)";
+                    + usedTransitive + " used)"
+                    + (undeterminedCount > 0 ? ", " + undeterminedCount + " undetermined" : "");
         } else {
             this.status = declared.size() + " declared, " + transitive.size() + " transitive dependencies";
         }
@@ -681,6 +707,7 @@ public class DependenciesTui extends ToolPanel {
                         case DM_TREE -> "DM Tree: " + (dmTreeTui != null ? dmTreeTui.nodeCount() : 0);
                         case UNUSED_DECLARED -> "Unused Declared: " + declared.size();
                         case USED_TRANSITIVE -> "Used Transitive: " + transitive.size();
+                        case UNDETERMINED -> "Undetermined: " + undetermined.size();
                     });
         }
         return names;
@@ -728,6 +755,8 @@ public class DependenciesTui extends ToolPanel {
             } else if (view == View.TRANSITIVE || view == View.USED_TRANSITIVE) {
                 spans.add(Span.raw("a/Enter").bold());
                 spans.add(Span.raw(":Add  "));
+            } else if (view == View.UNDETERMINED) {
+                // read-only view — no mutation actions
             } else {
                 spans.add(Span.raw("x").bold());
                 spans.add(Span.raw(HINT_REMOVE));
@@ -834,6 +863,7 @@ public class DependenciesTui extends ToolPanel {
         return switch (view) {
             case DECLARED, UNUSED_DECLARED -> declared;
             case TRANSITIVE, USED_TRANSITIVE -> transitive;
+            case UNDETERMINED -> undetermined;
             default -> declared;
         };
     }
@@ -843,6 +873,7 @@ public class DependenciesTui extends ToolPanel {
             case TREE, DM_TREE -> 0;
             case DECLARED, UNUSED_DECLARED -> declared.size();
             case TRANSITIVE, USED_TRANSITIVE -> transitive.size();
+            case UNDETERMINED -> undetermined.size();
             case MANAGED -> managed.size();
         };
     }
@@ -1312,6 +1343,7 @@ public class DependenciesTui extends ToolPanel {
                 case TRANSITIVE -> transitiveLabel;
                 case UNUSED_DECLARED -> "Unused Declared: " + declared.size();
                 case USED_TRANSITIVE -> "Used Transitive: " + transitive.size();
+                case UNDETERMINED -> "Undetermined: " + undetermined.size();
                 case MANAGED -> managedLabel;
                 case DM_TREE -> "DM Tree: " + (dmTreeTui != null ? dmTreeTui.nodeCount() : 0);
             };
@@ -1394,13 +1426,14 @@ public class DependenciesTui extends ToolPanel {
     }
 
     private void renderTable(Frame frame, Rect area) {
-        renderTable(
-                frame,
-                area,
-                Title.from(
-                        view == View.DECLARED
-                                ? " Declared Dependencies (" + declared.size() + ") "
-                                : " Transitive Dependencies (" + transitive.size() + ") "));
+        String title =
+                switch (view) {
+                    case DECLARED, UNUSED_DECLARED -> " Declared Dependencies (" + declared.size() + ") ";
+                    case TRANSITIVE, USED_TRANSITIVE -> " Transitive Dependencies (" + transitive.size() + ") ";
+                    case UNDETERMINED -> " Undetermined Dependencies (" + undetermined.size() + ") ";
+                    default -> " Dependencies ";
+                };
+        renderTable(frame, area, Title.from(title));
     }
 
     private void renderTable(Frame frame, Rect area, Title title) {
@@ -1466,12 +1499,12 @@ public class DependenciesTui extends ToolPanel {
         String via = dep.pulledBy != null ? "(via " + dep.pulledBy + ")" : "";
         if (bytecodeAnalyzed) {
             String icon = usageIcon(dep);
-            Row row = (view == View.DECLARED)
+            Row row = (view == View.DECLARED || view == View.UNDETERMINED)
                     ? Row.from(icon, dep.ga(), dep.version, dep.scope)
                     : Row.from(icon, dep.ga(), dep.version, dep.scope, via);
             return row.style(usageRowStyle(dep));
         }
-        return (view == View.DECLARED)
+        return (view == View.DECLARED || view == View.UNDETERMINED)
                 ? Row.from(dep.ga(), dep.version, dep.scope)
                 : Row.from(dep.ga(), dep.version, dep.scope, via);
     }
@@ -1485,13 +1518,13 @@ public class DependenciesTui extends ToolPanel {
         String via = dep.pulledBy != null ? "(via " + dep.pulledBy + ")" : "";
         if (bytecodeAnalyzed) {
             String icon = usageIcon(dep);
-            Row row = (view == View.DECLARED)
+            Row row = (view == View.DECLARED || view == View.UNDETERMINED)
                     ? Row.from(icon, dep.ga(), dep.version, dep.scope)
                     : Row.from(icon, dep.ga(), dep.version, dep.scope, via);
             return row.style(usageRowStyle(dep).bg(theme.searchHighlightBg()));
         }
         Style highlight = theme.searchHighlight();
-        return (view == View.DECLARED)
+        return (view == View.DECLARED || view == View.UNDETERMINED)
                 ? Row.from(dep.ga(), dep.version, dep.scope).style(highlight)
                 : Row.from(dep.ga(), dep.version, dep.scope, via).style(highlight);
     }
@@ -1503,7 +1536,7 @@ public class DependenciesTui extends ToolPanel {
             };
         }
         if (bytecodeAnalyzed) {
-            return (view == View.DECLARED)
+            return (view == View.DECLARED || view == View.UNDETERMINED)
                     ? new Constraint[] {
                         Constraint.length(4),
                         Constraint.percentage(46),
@@ -1518,7 +1551,7 @@ public class DependenciesTui extends ToolPanel {
                         Constraint.percentage(33)
                     };
         }
-        return (view == View.DECLARED)
+        return (view == View.DECLARED || view == View.UNDETERMINED)
                 ? new Constraint[] {Constraint.percentage(50), Constraint.percentage(25), Constraint.percentage(25)}
                 : new Constraint[] {
                     Constraint.percentage(35),

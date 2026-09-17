@@ -18,6 +18,7 @@
  */
 package eu.maveniverse.maven.pilot;
 
+import java.nio.file.Path;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.extension.Extension;
 import org.junit.jupiter.api.io.TempDir;
@@ -49,5 +50,5 @@ class AnnotationFixture {
 
     /** Field whose only annotation is {@link TempDir} — tests field-annotation path. */
     @TempDir
-    java.nio.file.Path tempDir;
+    Path tempDir;
 }

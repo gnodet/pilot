@@ -430,6 +430,10 @@ public class DependenciesMojo extends AbstractMojo {
                 (showUndetermined || failOnUndetermined) ? undetermined : List.of();
 
         if (unusedDeclared.isEmpty() && usedTransitive.isEmpty() && visibleUndetermined.isEmpty()) {
+            if (!undetermined.isEmpty()) {
+                getLog().debug(undetermined.size()
+                        + " undetermined dep(s) hidden — use -Dpilot.showUndetermined=true to see them.");
+            }
             getLog().info("No dependency issues found.");
             return;
         }

@@ -512,8 +512,11 @@ class DependenciesMojoTest {
                 "com.example", "resource-jar", "compile", true, DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
         MavenProject proj = tempProject(tmp);
 
-        // Only undetermined dep, hidden by default → no issues → clean exit
+        // Only undetermined dep, hidden by default → no issues → clean exit, no warnings
+        var log = new RecordingLog();
+        mojo.setLog(log);
         mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of());
+        assertThat(log.warnings()).isEmpty();
     }
 
     /** Minimal Maven Log implementation that captures warning messages for assertion. */

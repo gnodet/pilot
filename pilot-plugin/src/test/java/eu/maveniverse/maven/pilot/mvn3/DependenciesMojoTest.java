@@ -26,6 +26,7 @@ import eu.maveniverse.maven.pilot.DependencyUsageAnalyzer;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,6 +36,7 @@ import org.apache.maven.model.InputLocation;
 import org.apache.maven.model.InputSource;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugin.logging.Log;
 import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -467,7 +469,8 @@ class DependenciesMojoTest {
     void check_failsOnBothIssuesAndUndetermined(@TempDir Path tmp) throws Exception {
         var mojo = new DependenciesMojo(null);
         MojoTestHelper.setField(mojo, "action", "check");
-        // failOnUndetermined=false, but there are real issues → still fails
+        // failOnUndetermined=false, but there are real issues → still fails for the unused dep
+        // undetermined dep is hidden by default (showUndetermined=false)
 
         var unused =
                 depWithStatus("com.example", "unused-lib", "compile", true, DependencyUsageAnalyzer.UsageStatus.UNUSED);
@@ -478,6 +481,112 @@ class DependenciesMojoTest {
         assertThatThrownBy(() -> mojo.executeNonInteractive(proj, List.of(unused, undetermined), List.of(), Map.of()))
                 .isInstanceOf(MojoFailureException.class)
                 .hasMessageContaining("com.example:unused-lib")
-                .hasMessageContaining("com.example:resource-jar");
+                // undetermined is hidden (showUndetermined defaults to false)
+                .hasMessageNotContaining("com.example:resource-jar");
+    }
+
+    @Test
+    void check_showsUndeterminedWhenFlagSet(@TempDir Path tmp) throws Exception {
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+        MojoTestHelper.setField(mojo, "showUndetermined", true);
+
+        var dep = depWithStatus(
+                "com.example", "resource-jar", "compile", true, DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        MavenProject proj = tempProject(tmp);
+
+        // showUndetermined=true, failOnUndetermined=false → warns but does not fail
+        var log = new RecordingLog();
+        mojo.setLog(log);
+        mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of());
+        assertThat(log.warnings()).anyMatch(w -> w.contains("com.example:resource-jar"));
+    }
+
+    @Test
+    void report_hidesUndeterminedByDefault(@TempDir Path tmp) throws Exception {
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "report");
+        // showUndetermined defaults to false
+
+        var dep = depWithStatus(
+                "com.example", "resource-jar", "compile", true, DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        MavenProject proj = tempProject(tmp);
+
+        // Only undetermined dep, hidden by default → no issues → clean exit, no warnings
+        var log = new RecordingLog();
+        mojo.setLog(log);
+        mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of());
+        assertThat(log.warnings()).isEmpty();
+    }
+
+    /** Minimal Maven Log implementation that captures warning messages for assertion. */
+    private static class RecordingLog implements Log {
+        private final List<String> warnings = new ArrayList<>();
+
+        List<String> warnings() {
+            return warnings;
+        }
+
+        @Override
+        public boolean isDebugEnabled() {
+            return false;
+        }
+
+        @Override
+        public void debug(CharSequence content) {}
+
+        @Override
+        public void debug(CharSequence content, Throwable error) {}
+
+        @Override
+        public void debug(Throwable error) {}
+
+        @Override
+        public boolean isInfoEnabled() {
+            return false;
+        }
+
+        @Override
+        public void info(CharSequence content) {}
+
+        @Override
+        public void info(CharSequence content, Throwable error) {}
+
+        @Override
+        public void info(Throwable error) {}
+
+        @Override
+        public boolean isWarnEnabled() {
+            return true;
+        }
+
+        @Override
+        public void warn(CharSequence content) {
+            warnings.add(content == null ? "" : content.toString());
+        }
+
+        @Override
+        public void warn(CharSequence content, Throwable error) {
+            warn(content);
+        }
+
+        @Override
+        public void warn(Throwable error) {
+            warnings.add(error == null ? "" : error.getMessage());
+        }
+
+        @Override
+        public boolean isErrorEnabled() {
+            return false;
+        }
+
+        @Override
+        public void error(CharSequence content) {}
+
+        @Override
+        public void error(CharSequence content, Throwable error) {}
+
+        @Override
+        public void error(Throwable error) {}
     }
 }

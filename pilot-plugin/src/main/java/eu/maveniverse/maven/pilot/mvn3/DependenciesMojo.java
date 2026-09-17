@@ -48,8 +48,8 @@ import org.eclipse.aether.resolution.DependencyResult;
  *
  * <p>Three actions via {@code -Dpilot.action}:</p>
  * <ul>
- *   <li><b>report</b> (default) — prints unused declared, used transitive, and undetermined
- *       dependencies without failing</li>
+ *   <li><b>report</b> (default) — prints unused declared and used transitive dependencies
+ *       without failing; undetermined deps are hidden unless {@code -Dpilot.showUndetermined=true}</li>
  *   <li><b>check</b> — reports issues and fails the build if any are found</li>
  *   <li><b>fix</b> — removes unused declared and adds used transitive dependencies to the POM</li>
  * </ul>
@@ -65,18 +65,20 @@ import org.eclipse.aether.resolution.DependencyResult;
  * {@code -Dpilot.skipTestScope=true} to skip test-scope analysis entirely.</p>
  *
  * <p>Dependencies whose usage <em>cannot</em> be determined (e.g. resource-only JARs, deps
- * without any classes) are reported as <em>undetermined</em>. Use {@code knownUsed} and
- * {@code knownUnused} to annotate them explicitly. Annotating a dep whose status is already
- * confidently known (USED or UNUSED) as the opposite is treated as an error — it means the
- * annotation is stale.</p>
+ * without any classes) are classified as <em>undetermined</em>. They are <strong>hidden by
+ * default</strong> — use {@code -Dpilot.showUndetermined=true} to include them in the report.
+ * Use {@code knownUsed} and {@code knownUnused} to annotate them explicitly. Annotating a dep
+ * whose status is already confidently known (USED or UNUSED) as the opposite is treated as an
+ * error — it means the annotation is stale.</p>
  *
  * <p>Usage:</p>
  * <pre>
- * mvn package pilot:dependencies                                   # full analysis (recommended)
+ * mvn package pilot:dependencies                                            # full analysis (recommended)
+ * mvn package pilot:dependencies -Dpilot.showUndetermined=true             # also show undetermined
  * mvn package pilot:dependencies -Dpilot.action=check
  * mvn package pilot:dependencies -Dpilot.action=check -Dpilot.failOnUndetermined=true
  * mvn package pilot:dependencies -Dpilot.action=fix
- * mvn compile pilot:dependencies -Dpilot.skipTestScope=true        # skip test-scope analysis
+ * mvn compile pilot:dependencies -Dpilot.skipTestScope=true                # skip test-scope analysis
  * </pre>
  *
  * @since 0.1.0
@@ -157,9 +159,22 @@ public class DependenciesMojo extends AbstractMojo {
     private List<String> knownUnused;
 
     /**
+     * When {@code true}, include {@code UNDETERMINED} dependencies in the report and check
+     * output. Opt-in because undetermined deps (resource-only JARs, annotation processors,
+     * BOMs-as-jars) are expected in many projects and add noise when shown unconditionally.
+     *
+     * <p>Has no effect on the {@code fix} action — undetermined deps are never removed.</p>
+     *
+     * @since 0.5.0
+     */
+    @Parameter(property = "pilot.showUndetermined", defaultValue = "false")
+    private boolean showUndetermined = false;
+
+    /**
      * When {@code true} and {@code action=check}, fail the build if any dependencies
      * remain {@code UNDETERMINED} after applying {@code knownUsed}/{@code knownUnused}
      * overrides. Useful in CI to enforce that every dependency is explicitly accounted for.
+     * Implies {@code showUndetermined=true}.
      *
      * @since 0.4.0
      */
@@ -410,7 +425,15 @@ public class DependenciesMojo extends AbstractMojo {
         unusedDeclared.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredUnused));
         usedTransitive.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredTransitive));
 
-        if (unusedDeclared.isEmpty() && usedTransitive.isEmpty() && undetermined.isEmpty()) {
+        // showUndetermined is opt-in; failOnUndetermined implies showing them
+        List<DependenciesTui.DepEntry> visibleUndetermined =
+                (showUndetermined || failOnUndetermined) ? undetermined : List.of();
+
+        if (unusedDeclared.isEmpty() && usedTransitive.isEmpty() && visibleUndetermined.isEmpty()) {
+            if (!undetermined.isEmpty()) {
+                getLog().debug(undetermined.size()
+                        + " undetermined dep(s) hidden — use -Dpilot.showUndetermined=true to see them.");
+            }
             getLog().info("No dependency issues found.");
             return;
         }
@@ -425,16 +448,17 @@ public class DependenciesMojo extends AbstractMojo {
                         ancestorManagedGAs,
                         getLog()::info);
             case "report" ->
-                getLog().warn(DependenciesReporter.formatFindings(unusedDeclared, usedTransitive, undetermined));
+                getLog().warn(DependenciesReporter.formatFindings(unusedDeclared, usedTransitive, visibleUndetermined));
             default -> {
                 boolean hasIssues = !unusedDeclared.isEmpty() || !usedTransitive.isEmpty();
                 boolean hasUndetermined = !undetermined.isEmpty();
                 if (hasIssues || (hasUndetermined && failOnUndetermined)) {
-                    throw new MojoFailureException(
-                            DependenciesReporter.formatCheckFailure(unusedDeclared, usedTransitive, undetermined));
-                } else if (hasUndetermined) {
-                    // undetermined only — warn but don't fail (failOnUndetermined=false)
-                    getLog().warn(DependenciesReporter.formatFindings(unusedDeclared, usedTransitive, undetermined));
+                    throw new MojoFailureException(DependenciesReporter.formatCheckFailure(
+                            unusedDeclared, usedTransitive, visibleUndetermined));
+                } else if (!visibleUndetermined.isEmpty()) {
+                    // undetermined visible but failOnUndetermined=false — warn only
+                    getLog().warn(DependenciesReporter.formatFindings(
+                            unusedDeclared, usedTransitive, visibleUndetermined));
                 }
             }
         }

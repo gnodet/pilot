@@ -72,7 +72,8 @@ public class AlignTui extends ToolPanel {
     private static final int ROW_VERSION_STYLE = 0;
     private static final int ROW_VERSION_SOURCE = 1;
     private static final int ROW_PROPERTY_NAMING = 2;
-    private static final int ROW_COUNT = 3;
+    private static final int ROW_INSERTION_ORDERING = 3;
+    private static final int ROW_COUNT = 4;
 
     private final String pomPath;
     private final List<String> additionalPomPaths; // batch mode: additional POMs to align
@@ -84,6 +85,7 @@ public class AlignTui extends ToolPanel {
     private AlignOptions.VersionStyle selectedStyle;
     private AlignOptions.VersionSource selectedSource;
     private AlignOptions.PropertyNamingConvention selectedNaming;
+    private AlignOptions.InsertionOrdering selectedOrdering;
 
     private Phase phase = Phase.SELECT;
     private final TableState tableState = new TableState();
@@ -115,6 +117,7 @@ public class AlignTui extends ToolPanel {
                     .versionStyle(detectedOptions.versionStyle())
                     .versionSource(parentInfo.detectedOptions().versionSource())
                     .namingConvention(parentInfo.detectedOptions().namingConvention())
+                    .insertionOrdering(parentInfo.detectedOptions().insertionOrdering())
                     .build();
         } else {
             this.detectedOptions = detectedOptions;
@@ -123,6 +126,7 @@ public class AlignTui extends ToolPanel {
         this.selectedStyle = this.detectedOptions.versionStyle();
         this.selectedSource = this.detectedOptions.versionSource();
         this.selectedNaming = this.detectedOptions.namingConvention();
+        this.selectedOrdering = this.detectedOptions.insertionOrdering();
         if (!additionalPomPaths.isEmpty()) {
             this.status = "Batch mode: aligning " + (1 + additionalPomPaths.size()) + " modules";
         } else if (parentInfo != null) {
@@ -237,6 +241,8 @@ public class AlignTui extends ToolPanel {
             case ROW_VERSION_SOURCE -> selectedSource = nextEnum(AlignOptions.VersionSource.values(), selectedSource);
             case ROW_PROPERTY_NAMING ->
                 selectedNaming = nextEnum(AlignOptions.PropertyNamingConvention.values(), selectedNaming);
+            case ROW_INSERTION_ORDERING ->
+                selectedOrdering = nextEnum(AlignOptions.InsertionOrdering.values(), selectedOrdering);
         }
     }
 
@@ -247,6 +253,8 @@ public class AlignTui extends ToolPanel {
             case ROW_VERSION_SOURCE -> selectedSource = prevEnum(AlignOptions.VersionSource.values(), selectedSource);
             case ROW_PROPERTY_NAMING ->
                 selectedNaming = prevEnum(AlignOptions.PropertyNamingConvention.values(), selectedNaming);
+            case ROW_INSERTION_ORDERING ->
+                selectedOrdering = prevEnum(AlignOptions.InsertionOrdering.values(), selectedOrdering);
         }
     }
 
@@ -270,6 +278,7 @@ public class AlignTui extends ToolPanel {
                 .versionStyle(selectedStyle)
                 .versionSource(selectedSource)
                 .namingConvention(selectedNaming)
+                .insertionOrdering(selectedOrdering)
                 .build();
     }
 
@@ -567,7 +576,7 @@ public class AlignTui extends ToolPanel {
         String desc = """
                 ## BOM Alignment
                 Restructures dependency declarations to follow a
-                consistent convention. Configure three options:
+                consistent convention. Configure four options:\u0020
                 Version Style: how versions are expressed — inline
                 in <version> tags, via <properties>, or managed
                 through <dependencyManagement>.
@@ -575,6 +584,8 @@ public class AlignTui extends ToolPanel {
                 keep current versions, import from a BOM, etc.
                 Property Naming: convention for property names
                 (e.g. groupId.artifactId.version or artifact.version).
+                Insertion Ordering: how new dependencies are ordered
+                when inserted (NONE, ALPHA, SCOPE, SCOPE_THEN_ALPHA).
                 Preview the diff before applying to verify changes.
                 """;
         if (parentInfo != null) {
@@ -746,6 +757,11 @@ public class AlignTui extends ToolPanel {
                 detectedOptions.namingConvention().name(),
                 selectedNaming.name(),
                 selectedNaming != detectedOptions.namingConvention()));
+        rows.add(createConventionRow(
+                "Insertion Ordering",
+                detectedOptions.insertionOrdering().name(),
+                selectedOrdering.name(),
+                selectedOrdering != detectedOptions.insertionOrdering()));
 
         Table table = Table.builder()
                 .header(header)

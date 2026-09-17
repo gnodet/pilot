@@ -1049,7 +1049,8 @@ public class DependenciesTui extends ToolPanel {
         AlignOptions.Builder builder = AlignOptions.builder()
                 .versionStyle(detected.versionStyle())
                 .versionSource(detected.versionSource())
-                .namingConvention(detected.namingConvention());
+                .namingConvention(detected.namingConvention())
+                .insertionOrdering(detected.insertionOrdering());
         if (!COMPILE_SCOPE.equals(scope)) {
             builder.scope(scope);
         }
@@ -1250,7 +1251,8 @@ public class DependenciesTui extends ToolPanel {
         AlignOptions.Builder builder = AlignOptions.builder()
                 .versionStyle(detected.versionStyle())
                 .versionSource(detected.versionSource())
-                .namingConvention(detected.namingConvention());
+                .namingConvention(detected.namingConvention())
+                .insertionOrdering(detected.insertionOrdering());
         if (scope != null && !scope.isEmpty() && !COMPILE_SCOPE.equals(scope)) {
             builder.scope(scope);
         }

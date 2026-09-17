@@ -141,7 +141,8 @@ public final class DependenciesReporter {
             AlignOptions.Builder optBuilder = AlignOptions.builder()
                     .versionStyle(detected.versionStyle())
                     .versionSource(detected.versionSource())
-                    .namingConvention(detected.namingConvention());
+                    .namingConvention(detected.namingConvention())
+                    .insertionOrdering(detected.insertionOrdering());
             if (scope != null && !scope.isEmpty() && !"compile".equals(scope)) {
                 optBuilder.scope(scope);
             }

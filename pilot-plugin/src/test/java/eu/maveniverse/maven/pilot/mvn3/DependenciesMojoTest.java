@@ -411,6 +411,26 @@ class DependenciesMojoTest {
         assertThat(dep.usageStatus).isEqualTo(DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
+    @Test
+    void check_transitiveUndetermined_neverFailsEvenWhenFlagSet(@TempDir Path tmp) throws Exception {
+        // Behavioral change: transitive UNDETERMINED no longer accumulates into the undetermined bucket,
+        // so failOnUndetermined=true must NOT fail the build for transitive deps.
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+        MojoTestHelper.setField(mojo, "failOnUndetermined", true);
+
+        var transitiveDep = depWithStatus(
+                "com.example",
+                "transitive-resource",
+                "compile",
+                false,
+                DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+        MavenProject proj = tempProject(tmp);
+
+        // Transitive UNDETERMINED must NOT fail, regardless of failOnUndetermined
+        mojo.executeNonInteractive(proj, List.of(), List.of(transitiveDep), Map.of());
+    }
+
     // --- failOnUndetermined ---
 
     @Test

@@ -160,9 +160,12 @@ class Maven3PilotResolver implements PilotResolver {
             // setManagedDependencies() correctly without the depth gate ClassicDependencyManager has.
             collectRequest.setRootArtifact(
                     new DefaultArtifact(mp.getGroupId(), mp.getArtifactId(), mp.getPackaging(), mp.getVersion()));
-            collectRequest.setDependencies(MojoHelper.convertDependencies(managed));
+            collectRequest.setDependencies(
+                    MojoHelper.convertDependencies(managed, verboseSession.getArtifactTypeRegistry()));
             collectRequest.setManagedDependencies(
-                    MojoHelper.convertDependencies(mp.getDependencyManagement().getDependencies()));
+                    MojoHelper.convertDependencies(
+                            mp.getDependencyManagement().getDependencies(),
+                            verboseSession.getArtifactTypeRegistry()));
             collectRequest.setRepositories(mp.getRemoteProjectRepositories());
             CollectResult result = repoSystem.collectDependencies(verboseSession, collectRequest);
             return MojoHelper.fromDependencyNode(result.getRoot());

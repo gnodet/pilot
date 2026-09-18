@@ -531,16 +531,33 @@ public class DependenciesMojo extends AbstractMojo {
     }
 
     /**
+     * Well-known JVM test source directory names beyond {@code src/test/java}.
+     * Plugins such as GMavenPlus, kotlin-maven-plugin, or scala-maven-plugin register these via
+     * {@code addTestSources} at the {@code INITIALIZE} phase — but only when the full lifecycle
+     * runs. When {@code pilot:dependencies} is invoked directly, those registrations may not have
+     * fired yet, so we fall back to probing these directories by convention.
+     */
+    static final List<String> EXTRA_TEST_SOURCE_DIRS = List.of("groovy", "kotlin", "scala");
+
+    /**
      * Returns {@code true} if the project has at least one test source directory that exists and contains
      * at least one source file (regular file). When a project has no test sources, the absence of
      * {@code target/test-classes} is expected and should not be treated as an error.
+     * <p>
+     * In addition to the directories registered in {@code getTestCompileSourceRoots()} (which only
+     * contains {@code src/test/java} by default), this method also probes well-known JVM test source
+     * directories such as {@code src/test/groovy}, {@code src/test/kotlin}, and {@code src/test/scala}.
+     * This is necessary because language-specific plugins (e.g. GMavenPlus) register their source
+     * directories only during the {@code INITIALIZE} phase, which may not have run when
+     * {@code pilot:dependencies} is invoked directly.
      */
     boolean hasTestSources(MavenProject proj) {
+        Set<Path> checked = new HashSet<>();
         List<String> roots = proj.getTestCompileSourceRoots();
         if (roots != null) {
             for (String root : roots) {
                 Path testSrcPath = Path.of(root);
-                if (Files.isDirectory(testSrcPath)) {
+                if (checked.add(testSrcPath) && Files.isDirectory(testSrcPath)) {
                     try (var stream = Files.walk(testSrcPath)) {
                         if (stream.anyMatch(Files::isRegularFile)) {
                             return true;
@@ -548,6 +565,21 @@ public class DependenciesMojo extends AbstractMojo {
                     } catch (IOException e) {
                         getLog().debug("Cannot walk test source directory " + testSrcPath + ": " + e.getMessage());
                     }
+                }
+            }
+        }
+        // Probe well-known JVM test source directories that may not yet be registered
+        // (e.g. src/test/groovy added by GMavenPlus only during INITIALIZE).
+        Path basedir = proj.getBasedir().toPath();
+        for (String lang : EXTRA_TEST_SOURCE_DIRS) {
+            Path testSrcPath = basedir.resolve("src").resolve("test").resolve(lang);
+            if (checked.add(testSrcPath) && Files.isDirectory(testSrcPath)) {
+                try (var stream = Files.walk(testSrcPath)) {
+                    if (stream.anyMatch(Files::isRegularFile)) {
+                        return true;
+                    }
+                } catch (IOException e) {
+                    getLog().debug("Cannot walk test source directory " + testSrcPath + ": " + e.getMessage());
                 }
             }
         }

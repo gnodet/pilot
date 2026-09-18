@@ -517,12 +517,12 @@ public class DependenciesMojo extends AbstractMojo {
             for (String root : roots) {
                 Path srcPath = Path.of(root);
                 if (Files.isDirectory(srcPath)) {
-                    try (var stream = Files.list(srcPath)) {
-                        if (stream.findAny().isPresent()) {
+                    try (var stream = Files.walk(srcPath)) {
+                        if (stream.anyMatch(Files::isRegularFile)) {
                             return true;
                         }
                     } catch (IOException e) {
-                        getLog().debug("Cannot list source directory " + srcPath + ": " + e.getMessage());
+                        getLog().debug("Cannot walk source directory " + srcPath + ": " + e.getMessage());
                     }
                 }
             }
@@ -531,9 +531,9 @@ public class DependenciesMojo extends AbstractMojo {
     }
 
     /**
-     * Returns {@code true} if the project has at least one test source directory that exists and is non-empty.
-     * When a project has no test sources, the absence of {@code target/test-classes} is expected and should
-     * not be treated as an error.
+     * Returns {@code true} if the project has at least one test source directory that exists and contains
+     * at least one source file (regular file). When a project has no test sources, the absence of
+     * {@code target/test-classes} is expected and should not be treated as an error.
      */
     boolean hasTestSources(MavenProject proj) {
         List<String> roots = proj.getTestCompileSourceRoots();
@@ -541,12 +541,12 @@ public class DependenciesMojo extends AbstractMojo {
             for (String root : roots) {
                 Path testSrcPath = Path.of(root);
                 if (Files.isDirectory(testSrcPath)) {
-                    try (var stream = Files.list(testSrcPath)) {
-                        if (stream.findAny().isPresent()) {
+                    try (var stream = Files.walk(testSrcPath)) {
+                        if (stream.anyMatch(Files::isRegularFile)) {
                             return true;
                         }
                     } catch (IOException e) {
-                        getLog().debug("Cannot list test source directory " + testSrcPath + ": " + e.getMessage());
+                        getLog().debug("Cannot walk test source directory " + testSrcPath + ": " + e.getMessage());
                     }
                 }
             }

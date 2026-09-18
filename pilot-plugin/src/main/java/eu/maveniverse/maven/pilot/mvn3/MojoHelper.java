@@ -68,8 +68,15 @@ public final class MojoHelper {
     /**
      * Convert a Maven model Dependency into an Aether Dependency.
      *
+     * <p>Equivalent to {@link #convertDependency(org.apache.maven.model.Dependency, ArtifactTypeRegistry)}
+     * with {@code registry=null}: no type registry is consulted, so the Maven {@code <type>} element
+     * is passed through as the artifact extension verbatim (legacy behaviour). The classifier is empty
+     * when not explicitly set by the Maven dependency <em>and no registry default applies</em>.</p>
+     *
      * @param dep the Maven model Dependency to convert
-     * @return an Aether Dependency with the same coordinates, scope and optional flag; if the Maven dependency's classifier is null it becomes an empty string, if its type is null it defaults to "jar", and any Maven exclusions are mapped to Aether exclusions
+     * @return an Aether Dependency with the same coordinates, scope and optional flag; the classifier
+     *         is empty when not set and no registry default applies, the type defaults to {@code "jar"}
+     *         when absent, and Maven exclusions are mapped to Aether exclusions
      */
     static Dependency convertDependency(org.apache.maven.model.Dependency dep) {
         return convertDependency(dep, null);

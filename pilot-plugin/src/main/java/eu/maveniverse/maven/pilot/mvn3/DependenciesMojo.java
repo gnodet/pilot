@@ -243,7 +243,7 @@ public class DependenciesMojo extends AbstractMojo {
                     dep.getScope());
         }
 
-        DependencyRequest depRequest = new DependencyRequest(MojoHelper.buildCollectRequest(proj), null);
+        DependencyRequest depRequest = new DependencyRequest(MojoHelper.buildCollectRequest(proj, repoSession), null);
         DependencyResult depResult = repoSystem.resolveDependencies(repoSession, depRequest);
 
         DependencyTreeModel depTree = MojoHelper.fromDependencyNode(depResult.getRoot());
@@ -507,21 +507,22 @@ public class DependenciesMojo extends AbstractMojo {
     }
 
     /**
-     * Returns {@code true} if the project has at least one main source directory that contains at least one
-     * regular file (walking recursively). When a project has no main sources (e.g. POM packaging, BOM,
-     * parent POM), the absence of {@code target/classes} is expected and should not be treated as an error.
-     *
-     * <p>Iterates {@link MavenProject#getCompileSourceRoots()} so that source roots registered by
-     * annotation processors or build-helper-maven-plugin are included alongside the primary source
-     * directory.</p>
+     * Returns {@code true} if the project has at least one main source directory that exists and is non-empty.
+     * When a project has no main sources (e.g. POM packaging, BOM, parent POM), the absence of
+     * {@code target/classes} is expected and should not be treated as an error.
      */
-    static boolean hasMainSources(MavenProject proj) throws IOException {
-        for (String root : proj.getCompileSourceRoots()) {
-            if (root != null) {
-                Path rootPath = Path.of(root);
-                if (Files.isDirectory(rootPath)) {
-                    try (var walk = Files.walk(rootPath)) {
-                        if (walk.anyMatch(Files::isRegularFile)) return true;
+    boolean hasMainSources(MavenProject proj) {
+        List<String> roots = proj.getCompileSourceRoots();
+        if (roots != null) {
+            for (String root : roots) {
+                Path srcPath = Path.of(root);
+                if (Files.isDirectory(srcPath)) {
+                    try (var stream = Files.walk(srcPath)) {
+                        if (stream.anyMatch(Files::isRegularFile)) {
+                            return true;
+                        }
+                    } catch (IOException e) {
+                        getLog().debug("Cannot walk source directory " + srcPath + ": " + e.getMessage());
                     }
                 }
             }
@@ -530,21 +531,22 @@ public class DependenciesMojo extends AbstractMojo {
     }
 
     /**
-     * Returns {@code true} if the project has at least one test source directory that contains at least one
-     * regular file (walking recursively). When a project has no test sources, the absence of
+     * Returns {@code true} if the project has at least one test source directory that exists and contains
+     * at least one source file (regular file). When a project has no test sources, the absence of
      * {@code target/test-classes} is expected and should not be treated as an error.
-     *
-     * <p>Iterates {@link MavenProject#getTestCompileSourceRoots()} so that generated test source roots
-     * registered by annotation processors (Quarkus Panache, MapStruct, etc.) or build-helper-maven-plugin
-     * are included alongside the primary test source directory.</p>
      */
-    static boolean hasTestSources(MavenProject proj) throws IOException {
-        for (String root : proj.getTestCompileSourceRoots()) {
-            if (root != null) {
-                Path rootPath = Path.of(root);
-                if (Files.isDirectory(rootPath)) {
-                    try (var walk = Files.walk(rootPath)) {
-                        if (walk.anyMatch(Files::isRegularFile)) return true;
+    boolean hasTestSources(MavenProject proj) {
+        List<String> roots = proj.getTestCompileSourceRoots();
+        if (roots != null) {
+            for (String root : roots) {
+                Path testSrcPath = Path.of(root);
+                if (Files.isDirectory(testSrcPath)) {
+                    try (var stream = Files.walk(testSrcPath)) {
+                        if (stream.anyMatch(Files::isRegularFile)) {
+                            return true;
+                        }
+                    } catch (IOException e) {
+                        getLog().debug("Cannot walk test source directory " + testSrcPath + ": " + e.getMessage());
                     }
                 }
             }

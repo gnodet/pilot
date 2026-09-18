@@ -85,7 +85,7 @@ class Maven3PilotResolver implements PilotResolver {
     public DependencyTreeModel collectDependencies(PilotProject project) {
         try {
             MavenProject mp = requireMaven(project);
-            CollectRequest req = MojoHelper.buildCollectRequest(mp);
+            CollectRequest req = MojoHelper.buildCollectRequest(mp, repoSession);
             CollectResult result = repoSystem.collectDependencies(verboseSession, req);
             return MojoHelper.fromDependencyNode(result.getRoot());
         } catch (Exception e) {
@@ -97,7 +97,7 @@ class Maven3PilotResolver implements PilotResolver {
     public ResolvedDependencies resolveDependencies(PilotProject project) {
         try {
             MavenProject mp = requireMaven(project);
-            DependencyRequest depRequest = new DependencyRequest(MojoHelper.buildCollectRequest(mp), null);
+            DependencyRequest depRequest = new DependencyRequest(MojoHelper.buildCollectRequest(mp, repoSession), null);
             DependencyResult depResult = repoSystem.resolveDependencies(verboseSession, depRequest);
             DependencyTreeModel tree = MojoHelper.fromDependencyNode(depResult.getRoot());
             Map<String, File> gaToJar = new HashMap<>();
@@ -160,9 +160,10 @@ class Maven3PilotResolver implements PilotResolver {
             // setManagedDependencies() correctly without the depth gate ClassicDependencyManager has.
             collectRequest.setRootArtifact(
                     new DefaultArtifact(mp.getGroupId(), mp.getArtifactId(), mp.getPackaging(), mp.getVersion()));
-            collectRequest.setDependencies(MojoHelper.convertDependencies(managed));
-            collectRequest.setManagedDependencies(
-                    MojoHelper.convertDependencies(mp.getDependencyManagement().getDependencies()));
+            collectRequest.setDependencies(
+                    MojoHelper.convertDependencies(managed, verboseSession.getArtifactTypeRegistry()));
+            collectRequest.setManagedDependencies(MojoHelper.convertDependencies(
+                    mp.getDependencyManagement().getDependencies(), verboseSession.getArtifactTypeRegistry()));
             collectRequest.setRepositories(mp.getRemoteProjectRepositories());
             CollectResult result = repoSystem.collectDependencies(verboseSession, collectRequest);
             return MojoHelper.fromDependencyNode(result.getRoot());

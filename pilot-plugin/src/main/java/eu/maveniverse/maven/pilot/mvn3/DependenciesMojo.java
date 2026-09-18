@@ -507,37 +507,59 @@ public class DependenciesMojo extends AbstractMojo {
     }
 
     /**
+     * Well-known JVM source directory names beyond the language default ({@code src/main/java},
+     * {@code src/test/java}).  Plugins such as GMavenPlus ({@code addSources}/{@code addTestSources}),
+     * kotlin-maven-plugin, or scala-maven-plugin register these at build time, but only when the
+     * full lifecycle is involved.  When {@code pilot:dependencies} is invoked directly these
+     * registrations may not have fired, so the methods below fall back to probing by convention.
+     */
+    static final List<String> EXTRA_SOURCE_LANGS = List.of("groovy", "kotlin", "scala");
+
+    /**
      * Returns {@code true} if the project has at least one main source directory that exists and is non-empty.
      * When a project has no main sources (e.g. POM packaging, BOM, parent POM), the absence of
      * {@code target/classes} is expected and should not be treated as an error.
+     * <p>
+     * In addition to the directories registered in {@code getCompileSourceRoots()} (which only
+     * contains {@code src/main/java} by default), this method also probes well-known JVM main
+     * source directories such as {@code src/main/groovy}, {@code src/main/kotlin}, and
+     * {@code src/main/scala}.  This is necessary because language-specific plugins
+     * (e.g. GMavenPlus {@code addSources}) register their source directories only during the
+     * {@code GENERATE_SOURCES} phase, which may not have run when {@code pilot:dependencies}
+     * is invoked directly.
      */
-    boolean hasMainSources(MavenProject proj) {
+    boolean hasMainSources(MavenProject proj) throws IOException {
+        Set<Path> checked = new HashSet<>();
         List<String> roots = proj.getCompileSourceRoots();
         if (roots != null) {
             for (String root : roots) {
                 Path srcPath = Path.of(root);
-                if (Files.isDirectory(srcPath)) {
+                if (checked.add(srcPath) && Files.isDirectory(srcPath)) {
                     try (var stream = Files.walk(srcPath)) {
                         if (stream.anyMatch(Files::isRegularFile)) {
                             return true;
                         }
-                    } catch (IOException e) {
-                        getLog().debug("Cannot walk source directory " + srcPath + ": " + e.getMessage());
+                    }
+                }
+            }
+        }
+        // Probe well-known JVM main source directories that may not yet be registered.
+        File basedirFile = proj.getBasedir();
+        if (basedirFile != null) {
+            Path basedir = basedirFile.toPath();
+            for (String lang : EXTRA_SOURCE_LANGS) {
+                Path srcPath = basedir.resolve("src").resolve("main").resolve(lang);
+                if (checked.add(srcPath) && Files.isDirectory(srcPath)) {
+                    try (var stream = Files.walk(srcPath)) {
+                        if (stream.anyMatch(Files::isRegularFile)) {
+                            return true;
+                        }
                     }
                 }
             }
         }
         return false;
     }
-
-    /**
-     * Well-known JVM test source directory names beyond {@code src/test/java}.
-     * Plugins such as GMavenPlus, kotlin-maven-plugin, or scala-maven-plugin register these via
-     * {@code addTestSources} at the {@code INITIALIZE} phase — but only when the full lifecycle
-     * runs. When {@code pilot:dependencies} is invoked directly, those registrations may not have
-     * fired yet, so we fall back to probing these directories by convention.
-     */
-    static final List<String> EXTRA_TEST_SOURCE_DIRS = List.of("groovy", "kotlin", "scala");
 
     /**
      * Returns {@code true} if the project has at least one test source directory that exists and contains
@@ -551,7 +573,7 @@ public class DependenciesMojo extends AbstractMojo {
      * directories only during the {@code INITIALIZE} phase, which may not have run when
      * {@code pilot:dependencies} is invoked directly.
      */
-    boolean hasTestSources(MavenProject proj) {
+    boolean hasTestSources(MavenProject proj) throws IOException {
         Set<Path> checked = new HashSet<>();
         List<String> roots = proj.getTestCompileSourceRoots();
         if (roots != null) {
@@ -562,24 +584,23 @@ public class DependenciesMojo extends AbstractMojo {
                         if (stream.anyMatch(Files::isRegularFile)) {
                             return true;
                         }
-                    } catch (IOException e) {
-                        getLog().debug("Cannot walk test source directory " + testSrcPath + ": " + e.getMessage());
                     }
                 }
             }
         }
         // Probe well-known JVM test source directories that may not yet be registered
         // (e.g. src/test/groovy added by GMavenPlus only during INITIALIZE).
-        Path basedir = proj.getBasedir().toPath();
-        for (String lang : EXTRA_TEST_SOURCE_DIRS) {
-            Path testSrcPath = basedir.resolve("src").resolve("test").resolve(lang);
-            if (checked.add(testSrcPath) && Files.isDirectory(testSrcPath)) {
-                try (var stream = Files.walk(testSrcPath)) {
-                    if (stream.anyMatch(Files::isRegularFile)) {
-                        return true;
+        File basedirFile = proj.getBasedir();
+        if (basedirFile != null) {
+            Path basedir = basedirFile.toPath();
+            for (String lang : EXTRA_SOURCE_LANGS) {
+                Path testSrcPath = basedir.resolve("src").resolve("test").resolve(lang);
+                if (checked.add(testSrcPath) && Files.isDirectory(testSrcPath)) {
+                    try (var stream = Files.walk(testSrcPath)) {
+                        if (stream.anyMatch(Files::isRegularFile)) {
+                            return true;
+                        }
                     }
-                } catch (IOException e) {
-                    getLog().debug("Cannot walk test source directory " + testSrcPath + ": " + e.getMessage());
                 }
             }
         }

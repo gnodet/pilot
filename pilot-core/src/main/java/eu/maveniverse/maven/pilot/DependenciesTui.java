@@ -46,6 +46,7 @@ import eu.maveniverse.domtrip.maven.PomEditor;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -164,10 +165,10 @@ public class DependenciesTui extends ToolPanel {
     /**
      * Traverse the resolved dependency tree and add transitive dependencies to {@code result}.
      *
-     * Each discovered transitive dependency that is not present in {@code declaredGAs} and
+     * <p>Each discovered transitive dependency that is not present in {@code declaredGAs} and
      * has not been seen before (by its GA) is appended to {@code result}. When a dependency
      * is discovered from a parent node, its {@code pulledBy} field is set to the parent's
-     * {@code groupId:artifactId}.
+     * {@code groupId:artifactId}.</p>
      *
      * @param node the current dependency tree node to traverse
      * @param declaredGAs set of declared dependency GAs (groupId:artifactId[:classifier]) to exclude
@@ -184,6 +185,58 @@ public class DependenciesTui extends ToolPanel {
                 result.add(entry);
             }
             collectTransitive(child, declaredGAs, seen, result);
+        }
+    }
+
+    /**
+     * Computes the set of transitive dependency GAs that are reachable <em>exclusively</em> via
+     * declared {@code type=pom} aggregator dependencies.
+     *
+     * <p>A {@code type=pom} dependency (also called a POM aggregator or bill-of-components) is
+     * intentionally used to import a whole group of artifacts onto the compile classpath. When the
+     * consuming module references classes from those artifacts, pilot would normally flag them as
+     * "used transitive" violations — but that is a false positive, because the code author chose
+     * the aggregator POM precisely to avoid listing every individual artifact.</p>
+     *
+     * <p>This method walks the subtrees rooted at each POM-aggregator declared dep and collects
+     * their descendants. It then subtracts any GA that is <em>also</em> reachable via a non-pom
+     * declared dep — those are legitimately transitive and should still be reported.</p>
+     *
+     * @param root           the root of the resolved dependency tree
+     * @param pomAggregatorGAs the GAs ({@code groupId:artifactId}) of declared deps whose
+     *                         {@code extension} is {@code "pom"} (i.e. Maven {@code <type>pom</type>})
+     * @return set of GAs that are exclusively reachable via POM-aggregator subtrees; these are
+     *         candidates for suppression in the used-transitive report
+     */
+    public static Set<String> collectPomAggregatorCoveredGAs(
+            DependencyTreeModel.TreeNode root, Set<String> pomAggregatorGAs) {
+        // Step 1: collect all GAs reachable via pom-aggregator subtrees.
+        Set<String> pomCovered = new HashSet<>();
+        for (DependencyTreeModel.TreeNode child : root.children) {
+            if (pomAggregatorGAs.contains(child.ga())) {
+                collectAllDescendantGAs(child, pomCovered);
+            }
+        }
+        // Step 2: collect all GAs reachable via non-pom declared dep subtrees.
+        Set<String> nonPomCovered = new HashSet<>();
+        for (DependencyTreeModel.TreeNode child : root.children) {
+            if (!pomAggregatorGAs.contains(child.ga())) {
+                collectAllDescendantGAs(child, nonPomCovered);
+            }
+        }
+        // Step 3: exclusively-pom-covered = pom-covered minus non-pom-covered.
+        pomCovered.removeAll(nonPomCovered);
+        return pomCovered;
+    }
+
+    /**
+     * Recursively collects the GAs of all descendants of {@code node} (not including {@code node}
+     * itself) into {@code result}.
+     */
+    private static void collectAllDescendantGAs(DependencyTreeModel.TreeNode node, Set<String> result) {
+        for (DependencyTreeModel.TreeNode child : node.children) {
+            result.add(child.ga());
+            collectAllDescendantGAs(child, result);
         }
     }
 

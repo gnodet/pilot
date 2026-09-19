@@ -232,6 +232,7 @@ public class DependenciesMojo extends AbstractMojo {
 
         Set<String> declaredGAs = new HashSet<>();
         List<DependenciesTui.DepEntry> declared = new ArrayList<>();
+        Set<String> pomAggregatorGAs = new HashSet<>();
         for (Dependency dep : proj.getDependencies()) {
             DependenciesTui.addDeclaredEntry(
                     declaredGAs,
@@ -241,6 +242,9 @@ public class DependenciesMojo extends AbstractMojo {
                     dep.getClassifier(),
                     dep.getVersion(),
                     dep.getScope());
+            if ("pom".equals(dep.getType())) {
+                pomAggregatorGAs.add(dep.getGroupId() + ":" + dep.getArtifactId());
+            }
         }
 
         DependencyRequest depRequest = new DependencyRequest(MojoHelper.buildCollectRequest(proj, repoSession), null);
@@ -250,6 +254,22 @@ public class DependenciesMojo extends AbstractMojo {
         Set<String> transitiveGAs = new HashSet<>();
         List<DependenciesTui.DepEntry> transitive = new ArrayList<>();
         DependenciesTui.collectTransitive(depTree.root, declaredGAs, transitiveGAs, transitive);
+
+        // Suppress transitive deps that are exclusively reachable via type=pom aggregator
+        // declared dependencies — those are intentional "classpath importers" and flagging
+        // their transitive closure as "used transitive (should be declared)" is a false positive.
+        if (!pomAggregatorGAs.isEmpty()) {
+            Set<String> pomCoveredGAs = DependenciesTui.collectPomAggregatorCoveredGAs(depTree.root, pomAggregatorGAs);
+            if (!pomCoveredGAs.isEmpty()) {
+                int before = transitive.size();
+                transitive.removeIf(dep -> pomCoveredGAs.contains(dep.ga()));
+                int suppressed = before - transitive.size();
+                if (suppressed > 0) {
+                    getLog().debug(suppressed + " transitive dep(s) suppressed — exclusively pulled by type=pom"
+                            + " aggregator(s): " + pomAggregatorGAs);
+                }
+            }
+        }
 
         Map<String, File> gaToJar = new HashMap<>();
         Map<String, String> gaToVersion = new HashMap<>();

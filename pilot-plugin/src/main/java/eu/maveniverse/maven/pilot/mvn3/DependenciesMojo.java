@@ -230,9 +230,29 @@ public class DependenciesMojo extends AbstractMojo {
                             + " or use -Dpilot.skipTestScope=true to exclude test-scope analysis.");
         }
 
+        // Collect dependencies from this module's effective model (own + inherited).
+        // We split them into "own" (declared in this module's pom.xml) and "inherited" (from a parent).
+        // - "Declared" for analysis purposes includes both own and inherited (so inherited deps are
+        //   not promoted to "used transitive" — the parent already provides them).
+        // - "Own-declared" is the subset used for unused-declared reporting and fix: we only report/fix
+        //   deps that are in this module's pom.xml, not deps inherited from a parent (those are the
+        //   parent's responsibility).
+        String ownPomPath =
+                proj.getFile() != null ? proj.getFile().toPath().normalize().toString() : null;
         Set<String> declaredGAs = new HashSet<>();
         List<DependenciesTui.DepEntry> declared = new ArrayList<>();
         for (Dependency dep : proj.getDependencies()) {
+            boolean isOwn = true;
+            if (ownPomPath != null) {
+                InputLocation loc = dep.getLocation("");
+                String rawSrc = (loc != null && loc.getSource() != null)
+                        ? loc.getSource().getLocation()
+                        : null;
+                String depSrc = (rawSrc != null && !rawSrc.contains("://"))
+                        ? Path.of(rawSrc).normalize().toString()
+                        : rawSrc;
+                isOwn = ownPomPath.equals(depSrc);
+            }
             DependenciesTui.addDeclaredEntry(
                     declaredGAs,
                     declared,
@@ -240,7 +260,8 @@ public class DependenciesMojo extends AbstractMojo {
                     dep.getArtifactId(),
                     dep.getClassifier(),
                     dep.getVersion(),
-                    dep.getScope());
+                    dep.getScope(),
+                    isOwn);
         }
 
         DependencyRequest depRequest = new DependencyRequest(MojoHelper.buildCollectRequest(proj, repoSession), null);
@@ -377,6 +398,7 @@ public class DependenciesMojo extends AbstractMojo {
 
         List<String> contradictions = new ArrayList<>();
         for (var dep : declared) {
+            if (!dep.ownDeclared) continue; // inherited deps are not subject to overrides
             if (DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), knownUsedSet)) {
                 if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNUSED) {
                     contradictions.add("'" + dep.ga() + "' is declared knownUsed but analyser found it UNUSED");
@@ -404,7 +426,7 @@ public class DependenciesMojo extends AbstractMojo {
         // --- Bucket deps by status ---
         List<DependenciesTui.DepEntry> unusedDeclared = new ArrayList<>();
         for (var dep : declared) {
-            if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNUSED) {
+            if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNUSED && dep.ownDeclared) {
                 unusedDeclared.add(dep);
             }
         }
@@ -418,7 +440,7 @@ public class DependenciesMojo extends AbstractMojo {
 
         List<DependenciesTui.DepEntry> undetermined = new ArrayList<>();
         for (var dep : declared) {
-            if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
+            if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED && dep.ownDeclared) {
                 undetermined.add(dep);
             }
         }

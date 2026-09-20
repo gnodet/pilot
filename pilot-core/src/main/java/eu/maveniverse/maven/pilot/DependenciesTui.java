@@ -79,6 +79,13 @@ public class DependenciesTui extends ToolPanel {
         final String version;
         public String scope;
         final boolean declared;
+        /**
+         * {@code true} if this dependency is declared in the module's own pom.xml;
+         * {@code false} if it is inherited from a parent POM.
+         * Inherited deps are not candidates for unused-declared warnings or fix actions.
+         */
+        public boolean ownDeclared;
+
         String pulledBy; // for transitive deps: who pulled this in
         public DependencyUsageAnalyzer.UsageStatus usageStatus; // set after bytecode analysis
         public Map<String, List<String>> usedMembers; // class -> list of member references (methods/fields)
@@ -105,6 +112,7 @@ public class DependenciesTui extends ToolPanel {
             this.version = version != null ? version : "";
             this.scope = scope != null ? scope : COMPILE_SCOPE;
             this.declared = declared;
+            this.ownDeclared = declared; // default: own-declared unless overridden
         }
 
         /**
@@ -148,6 +156,26 @@ public class DependenciesTui extends ToolPanel {
      * @param classifier dependency classifier (may be empty)
      * @param version dependency version
      * @param scope dependency scope
+     * @param isOwn {@code true} if the dependency is declared in this module's own pom.xml;
+     *              {@code false} if it is inherited from a parent POM
+     */
+    public static void addDeclaredEntry(
+            Set<String> declaredGAs,
+            List<DepEntry> declared,
+            String groupId,
+            String artifactId,
+            String classifier,
+            String version,
+            String scope,
+            boolean isOwn) {
+        var entry = new DepEntry(groupId, artifactId, classifier, version, scope, true);
+        entry.ownDeclared = isOwn;
+        declaredGAs.add(entry.ga());
+        declared.add(entry);
+    }
+
+    /**
+     * Backward-compatible overload that assumes own-declared (isOwn=true).
      */
     public static void addDeclaredEntry(
             Set<String> declaredGAs,
@@ -157,9 +185,7 @@ public class DependenciesTui extends ToolPanel {
             String classifier,
             String version,
             String scope) {
-        var entry = new DepEntry(groupId, artifactId, classifier, version, scope, true);
-        declaredGAs.add(entry.ga());
-        declared.add(entry);
+        addDeclaredEntry(declaredGAs, declared, groupId, artifactId, classifier, version, scope, true);
     }
 
     /**
@@ -420,12 +446,14 @@ public class DependenciesTui extends ToolPanel {
         this.reactorMode = false;
         this.treeTui = treeTui;
         this.dmTreeTui = dmTreeTui;
-        // Build undetermined list from declared deps only — transitive deps are never
-        // directly managed by the project, so UNDETERMINED status on them is not actionable
+        // Build undetermined list from own-declared deps only — transitive deps are never
+        // directly managed by the project, so UNDETERMINED status on them is not actionable.
+        // Inherited deps (ownDeclared=false) are also excluded: they are the parent's
+        // responsibility and not candidates for undetermined warnings or fix actions.
         List<DepEntry> undeterminedList = new ArrayList<>();
         if (bytecodeAnalyzed) {
             for (var dep : declared) {
-                if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
+                if (dep.ownDeclared && dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNDETERMINED) {
                     undeterminedList.add(dep);
                 }
             }
@@ -520,7 +548,7 @@ public class DependenciesTui extends ToolPanel {
     private void updateStatus() {
         if (bytecodeAnalyzed) {
             long unused = declared.stream()
-                    .filter(d -> d.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNUSED)
+                    .filter(d -> d.ownDeclared && d.usageStatus == DependencyUsageAnalyzer.UsageStatus.UNUSED)
                     .count();
             long usedTransitive = transitive.stream()
                     .filter(d -> d.usageStatus == DependencyUsageAnalyzer.UsageStatus.USED)
@@ -1046,6 +1074,10 @@ public class DependenciesTui extends ToolPanel {
         int sel = selectedIndex();
         if (sel < 0 || sel >= declared.size()) return;
         var dep = declared.get(sel);
+        if (!dep.ownDeclared) {
+            status = "Cannot remove inherited dependency " + dep.ga() + " (declared in parent POM)";
+            return;
+        }
 
         try {
             Coordinates coords = dep.hasClassifier()
@@ -1240,6 +1272,11 @@ public class DependenciesTui extends ToolPanel {
             }
             int current = scopes.indexOf(dep.scope);
             dep.scope = scopes.get((current + 1) % scopes.size());
+            return;
+        }
+
+        if (!dep.ownDeclared) {
+            status = "Cannot change scope of inherited dependency " + dep.ga() + " (declared in parent POM)";
             return;
         }
 

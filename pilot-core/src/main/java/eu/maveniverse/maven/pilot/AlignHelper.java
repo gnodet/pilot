@@ -82,7 +82,7 @@ public final class AlignHelper {
         if (bestCandidate != null) {
             return buildParentPomInfo(bestCandidate);
         }
-        // No reactor-local parent at all
+        // No reactor-local ancestor with dependency management; fall back to direct parent
         if (directParent != null) {
             return buildParentPomInfo(directParent);
         }

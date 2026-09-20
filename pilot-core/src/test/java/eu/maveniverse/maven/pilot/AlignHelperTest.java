@@ -106,6 +106,39 @@ class AlignHelperTest {
     }
 
     @Test
+    void findParentPomInfoFallsBackToDirectParentInThreeLevelHierarchyWithNoDepMgmt(@TempDir Path tempDir)
+            throws Exception {
+        // child → parent → root, none with dependencyManagement
+        // Expected: falls back to direct parent (not root)
+        Path rootPomFile = tempDir.resolve("root/pom.xml");
+        Files.createDirectories(rootPomFile.getParent());
+        Files.writeString(rootPomFile, EMPTY_PARENT_POM);
+
+        PilotProject rootProject = createProject("test", "root", "1.0", rootPomFile);
+
+        Path parentPomFile = tempDir.resolve("parent/pom.xml");
+        Files.createDirectories(parentPomFile.getParent());
+        Files.writeString(parentPomFile, EMPTY_PARENT_POM);
+
+        PilotProject parentProject = createProject("test", "parent", "1.0", parentPomFile);
+        parentProject.parent = rootProject;
+
+        Path childPomFile = tempDir.resolve("child/pom.xml");
+        Files.createDirectories(childPomFile.getParent());
+        Files.writeString(childPomFile, EMPTY_PARENT_POM);
+
+        PilotProject childProject = createProject("test", "child", "1.0", childPomFile);
+        childProject.parent = parentProject;
+
+        var result = AlignHelper.findParentPomInfo(childProject, List.of(rootProject, parentProject, childProject));
+
+        // No dep mgmt anywhere — should fall back to the direct parent, not the root
+        assertThat(result).isNotNull();
+        assertThat(result.pomPath()).isEqualTo(parentPomFile.toString());
+        assertThat(result.gav()).isEqualTo("test:parent:1.0");
+    }
+
+    @Test
     void findParentPomInfoReturnsNullWhenNoReactorParent(@TempDir Path tempDir) throws Exception {
         Path childPomFile = tempDir.resolve("child/pom.xml");
         Files.createDirectories(childPomFile.getParent());

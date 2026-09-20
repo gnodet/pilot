@@ -578,21 +578,33 @@ public class PilotEngine {
         if (projects.isEmpty()) {
             throw new IllegalArgumentException("projects must not be empty");
         }
-        PilotProject child = projects.size() > 1 ? projects.get(1) : projects.get(0);
-        PilotProject current = child.parent;
+        Set<Path> reactorPaths = new HashSet<>();
+        for (PilotProject p : projects) {
+            reactorPaths.add(p.pomPath);
+        }
 
+        PilotProject child = projects.size() > 1 ? projects.get(1) : projects.get(0);
+
+        // Walk the ancestor chain and pick the reactor-local ancestor with the most
+        // <dependencyManagement> entries. On a tie the higher ancestor wins (consolidated at root).
+        PilotProject bestCandidate = null;
+        int bestScore = -1;
+
+        PilotProject current = child.parent;
         while (current != null && current.pomPath != null) {
-            if (isRepositoryPom(current.pomPath)) {
+            if (isRepositoryPom(current.pomPath) || !reactorPaths.contains(current.pomPath)) {
                 break;
             }
-            var mgmt = current.originalManagedDependencies;
-            if (mgmt != null && !mgmt.isEmpty()) {
-                return current;
+            int score = current.originalManagedDependencies != null ? current.originalManagedDependencies.size() : 0;
+            // Greater-or-equal: on a tie the higher (later in walk) ancestor replaces the lower one
+            if (score >= bestScore) {
+                bestScore = score;
+                bestCandidate = current;
             }
             current = current.parent;
         }
 
-        return projects.get(0);
+        return bestCandidate != null ? bestCandidate : projects.get(0);
     }
 
     /**

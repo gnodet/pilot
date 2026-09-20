@@ -38,8 +38,14 @@ public final class AlignHelper {
     private AlignHelper() {}
 
     /**
-     * Walk the parent chain to find the nearest reactor-local ancestor with {@code <dependencyManagement>}.
-     * Falls back to the direct reactor parent if none has dependency management.
+     * Walk the parent chain to find the reactor-local ancestor with the most
+     * {@code <dependencyManagement>} entries (i.e. where the project conventionally
+     * centralises managed dependencies). Falls back to the direct reactor parent when
+     * no ancestor has any dependency management entries at all.
+     *
+     * <p>When multiple ancestors tie on score (and the score is positive), the highest
+     * one in the hierarchy wins, since the goal is to consolidate management as close
+     * to the root as possible.</p>
      *
      * @param proj the project to find a parent for
      * @param reactorProjects all projects in the reactor
@@ -51,9 +57,11 @@ public final class AlignHelper {
             reactorPaths.add(p.pomPath.toString());
         }
 
-        PilotProject current = proj.parent;
         PilotProject directParent = null;
+        PilotProject bestCandidate = null;
+        int bestScore = -1;
 
+        PilotProject current = proj.parent;
         while (current != null && current.pomPath != null) {
             if (!reactorPaths.contains(current.pomPath.toString())) {
                 break;
@@ -61,14 +69,20 @@ public final class AlignHelper {
             if (directParent == null) {
                 directParent = current;
             }
-            var mgmt = current.originalManagedDependencies;
-            if (mgmt != null && !mgmt.isEmpty()) {
-                return buildParentPomInfo(current);
+            int score = current.originalManagedDependencies != null ? current.originalManagedDependencies.size() : 0;
+            // Only consider ancestors that actually have dependency management entries.
+            // Greater-or-equal: on a tie the higher (later in walk) ancestor replaces the lower one.
+            if (score > 0 && score >= bestScore) {
+                bestScore = score;
+                bestCandidate = current;
             }
             current = current.parent;
         }
 
-        // No parent with depMgmt found; use direct reactor parent to create depMgmt
+        if (bestCandidate != null) {
+            return buildParentPomInfo(bestCandidate);
+        }
+        // No reactor-local ancestor with dependency management; fall back to direct parent
         if (directParent != null) {
             return buildParentPomInfo(directParent);
         }

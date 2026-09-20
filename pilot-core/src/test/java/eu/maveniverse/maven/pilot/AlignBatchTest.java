@@ -664,6 +664,57 @@ class AlignBatchTest {
     }
 
     @Test
+    void findManagementPomFallsBackToDirectParentInThreeLevelHierarchyWithNoDepMgmt(@TempDir Path root)
+            throws Exception {
+        // Three-level hierarchy: root → parent → child, none have managed deps.
+        // Must fall back to the direct parent (not the root).
+        Path rootPom = writePom(root.resolve("root"), """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <project>
+                    <modelVersion>4.0.0</modelVersion>
+                    <groupId>test</groupId>
+                    <artifactId>root</artifactId>
+                    <version>1.0</version>
+                    <packaging>pom</packaging>
+                </project>
+                """);
+
+        Path parentPom = writePom(root.resolve("parent"), """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <project>
+                    <modelVersion>4.0.0</modelVersion>
+                    <groupId>test</groupId>
+                    <artifactId>parent</artifactId>
+                    <version>1.0</version>
+                    <packaging>pom</packaging>
+                </project>
+                """);
+
+        Path childPom = writePom(root.resolve("child"), """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <project>
+                    <modelVersion>4.0.0</modelVersion>
+                    <groupId>test</groupId>
+                    <artifactId>child</artifactId>
+                    <version>1.0</version>
+                </project>
+                """);
+
+        var rootProject = createPilotProject("root", rootPom);
+        var parentProject = createPilotProject("parent", parentPom);
+        var childProject = createPilotProject("child", childPom);
+
+        childProject.parent = parentProject;
+        parentProject.parent = rootProject;
+
+        var result = AlignHelper.findParentPomInfo(childProject, List.of(rootProject, parentProject, childProject));
+
+        // No ancestor has any managed deps → must fall back to the direct parent, not the root.
+        assertThat(result).isNotNull();
+        assertThat(result.pomPath()).isEqualTo(parentPom.toString());
+    }
+
+    @Test
     void findManagementPomPicksAncestorWithMostManagedDeps(@TempDir Path root) throws Exception {
         // Simulate: root (3 managed deps) → parent (1 managed dep) → child
         // Expected: root wins because it has the highest score

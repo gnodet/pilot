@@ -40,11 +40,12 @@ public final class AlignHelper {
     /**
      * Walk the parent chain to find the reactor-local ancestor with the most
      * {@code <dependencyManagement>} entries (i.e. where the project conventionally
-     * centralises managed dependencies). Falls back to the direct reactor parent if no
-     * ancestor has dependency management at all.
+     * centralises managed dependencies). Falls back to the direct reactor parent when
+     * no ancestor has any dependency management entries at all.
      *
-     * <p>When multiple ancestors tie on score the highest one in the hierarchy wins,
-     * since the goal is to consolidate management as close to the root as possible.</p>
+     * <p>When multiple ancestors tie on score (and the score is positive), the highest
+     * one in the hierarchy wins, since the goal is to consolidate management as close
+     * to the root as possible.</p>
      *
      * @param proj the project to find a parent for
      * @param reactorProjects all projects in the reactor
@@ -69,8 +70,9 @@ public final class AlignHelper {
                 directParent = current;
             }
             int score = current.originalManagedDependencies != null ? current.originalManagedDependencies.size() : 0;
-            // Greater-or-equal: on a tie the higher (later in walk) ancestor replaces the lower one
-            if (score >= bestScore) {
+            // Only consider ancestors that actually have dependency management entries.
+            // Greater-or-equal: on a tie the higher (later in walk) ancestor replaces the lower one.
+            if (score > 0 && score >= bestScore) {
                 bestScore = score;
                 bestCandidate = current;
             }

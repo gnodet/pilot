@@ -204,23 +204,27 @@ public class DependenciesTui extends ToolPanel {
      *
      * @param root           the root of the resolved dependency tree
      * @param pomAggregatorGAs the GAs ({@code groupId:artifactId}) of declared deps whose
-     *                         {@code extension} is {@code "pom"} (i.e. Maven {@code <type>pom</type>})
+     *                         {@code extension} is {@code "pom"} (i.e. Maven {@code <type>pom</type>}).
+     *                         Entries are matched against tree nodes using both GA <em>and</em>
+     *                         extension to avoid false matches when a JAR dep shares the same
+     *                         {@code groupId:artifactId} as a POM aggregator.
      * @return set of GAs that are exclusively reachable via POM-aggregator subtrees; these are
      *         candidates for suppression in the used-transitive report
      */
     public static Set<String> collectPomAggregatorCoveredGAs(
             DependencyTreeModel.TreeNode root, Set<String> pomAggregatorGAs) {
         // Step 1: collect all GAs reachable via pom-aggregator subtrees.
+        // Guard with extension=="pom" so a JAR dep sharing the same G:A is not misidentified.
         Set<String> pomCovered = new HashSet<>();
         for (DependencyTreeModel.TreeNode child : root.children) {
-            if (pomAggregatorGAs.contains(child.ga())) {
+            if (pomAggregatorGAs.contains(child.ga()) && "pom".equals(child.extension)) {
                 collectAllDescendantGAs(child, pomCovered);
             }
         }
         // Step 2: collect all GAs reachable via non-pom declared dep subtrees.
         Set<String> nonPomCovered = new HashSet<>();
         for (DependencyTreeModel.TreeNode child : root.children) {
-            if (!pomAggregatorGAs.contains(child.ga())) {
+            if (!pomAggregatorGAs.contains(child.ga()) || !"pom".equals(child.extension)) {
                 collectAllDescendantGAs(child, nonPomCovered);
             }
         }
@@ -230,12 +234,21 @@ public class DependenciesTui extends ToolPanel {
     }
 
     /**
-     * Recursively collects the GAs of all descendants of {@code node} (not including {@code node}
-     * itself) into {@code result}.
+     * Recursively collects the GA keys of all descendants of {@code node} (not including
+     * {@code node} itself) into {@code result}.
+     *
+     * <p>Keys are classifier-aware (matching {@link DepEntry#ga()}): {@code groupId:artifactId}
+     * when there is no classifier, and {@code groupId:artifactId:classifier} when the node
+     * carries a classifier. This ensures classified descendants of a POM aggregator are
+     * correctly recognised when filtering the used-transitive list.</p>
      */
     private static void collectAllDescendantGAs(DependencyTreeModel.TreeNode node, Set<String> result) {
         for (DependencyTreeModel.TreeNode child : node.children) {
-            result.add(child.ga());
+            // Use classifier-aware key to match DepEntry.ga() used in the removeIf filter.
+            String key = (child.classifier != null && !child.classifier.isEmpty())
+                    ? child.groupId + ":" + child.artifactId + ":" + child.classifier
+                    : child.groupId + ":" + child.artifactId;
+            result.add(key);
             collectAllDescendantGAs(child, result);
         }
     }

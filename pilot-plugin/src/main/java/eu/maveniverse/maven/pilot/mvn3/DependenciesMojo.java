@@ -266,7 +266,7 @@ public class DependenciesMojo extends AbstractMojo {
                 int suppressed = before - transitive.size();
                 if (suppressed > 0) {
                     getLog().debug(suppressed + " transitive dep(s) suppressed — exclusively pulled by type=pom"
-                            + " aggregator(s): " + pomAggregatorGAs);
+                            + " aggregator(s); suppressed GAs: " + pomCoveredGAs);
                 }
             }
         }

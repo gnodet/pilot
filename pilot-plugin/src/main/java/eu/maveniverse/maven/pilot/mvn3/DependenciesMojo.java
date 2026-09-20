@@ -261,12 +261,18 @@ public class DependenciesMojo extends AbstractMojo {
         if (!pomAggregatorGAs.isEmpty()) {
             Set<String> pomCoveredGAs = DependenciesTui.collectPomAggregatorCoveredGAs(depTree.root, pomAggregatorGAs);
             if (!pomCoveredGAs.isEmpty()) {
-                int before = transitive.size();
-                transitive.removeIf(dep -> pomCoveredGAs.contains(dep.ga()));
-                int suppressed = before - transitive.size();
-                if (suppressed > 0) {
-                    getLog().debug(suppressed + " transitive dep(s) suppressed — exclusively pulled by type=pom"
-                            + " aggregator(s); suppressed GAs: " + pomCoveredGAs);
+                Set<String> suppressedGAs = new HashSet<>();
+                transitive.removeIf(dep -> {
+                    if (!pomCoveredGAs.contains(dep.ga())) {
+                        return false;
+                    }
+                    suppressedGAs.add(dep.ga());
+                    return true;
+                });
+                if (!suppressedGAs.isEmpty()) {
+                    getLog().debug(suppressedGAs.size()
+                            + " transitive dep(s) suppressed — exclusively pulled by type=pom"
+                            + " aggregator(s); suppressed GAs: " + suppressedGAs);
                 }
             }
         }

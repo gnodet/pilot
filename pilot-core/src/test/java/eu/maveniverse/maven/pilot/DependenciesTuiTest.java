@@ -302,6 +302,54 @@ class DependenciesTuiTest {
         assertThat(result).doesNotContain("org.example:lib-c");
     }
 
+    @Test
+    void collectPomAggregatorCoveredGAs_jarSharingGANotMisidentifiedAsPomAggregator() {
+        // root -> jar-dep  (org.example:comp, extension="jar") -> lib-a
+        //      -> pom-dep  (org.example:comp, extension="pom") -> lib-b
+        // Only the pom-dep subtree should be pom-covered; lib-a must NOT be suppressed.
+        var root = treeNode("com.example", "app", "1.0", "compile");
+        var jarDep = treeNodeWithExtension("org.example", "comp", "jar", "1.0", "compile");
+        var pomDep = treeNodeWithExtension("org.example", "comp", "pom", "1.0", "provided");
+        var libA = treeNode("org.example", "lib-a", "1.0", "compile");
+        var libB = treeNode("org.example", "lib-b", "1.0", "provided");
+        jarDep.children.add(libA);
+        pomDep.children.add(libB);
+        root.children.add(jarDep);
+        root.children.add(pomDep);
+
+        Set<String> pomGAs = Set.of("org.example:comp");
+        Set<String> result = DependenciesTui.collectPomAggregatorCoveredGAs(root, pomGAs);
+
+        // lib-b only reachable via pom subtree → suppressed
+        assertThat(result).contains("org.example:lib-b");
+        // lib-a reachable via jar subtree → must NOT be suppressed
+        assertThat(result).doesNotContain("org.example:lib-a");
+    }
+
+    private DependencyTreeModel.TreeNode treeNodeWithClassifier(
+            String g, String a, String classifier, String extension, String v, String scope) {
+        return new DependencyTreeModel.TreeNode(g, a, classifier, extension, v, scope, false, 0);
+    }
+
+    @Test
+    void collectPomAggregatorCoveredGAs_classifiedDescendantSuppressed() {
+        // root -> pom-agg (pom) -> lib-a:test-fixtures (classified)
+        // The classified descendant should be collected with key "g:a:classifier"
+        // so that it matches DepEntry.ga() during removeIf filtering.
+        var root = treeNode("com.example", "app", "1.0", "compile");
+        var pomAgg = treeNodeWithExtension("org.example", "all-components", "pom", "1.0", "provided");
+        var classifiedDep = treeNodeWithClassifier("org.example", "lib-a", "test-fixtures", "", "1.0", "test");
+        pomAgg.children.add(classifiedDep);
+        root.children.add(pomAgg);
+
+        Set<String> pomGAs = Set.of("org.example:all-components");
+        Set<String> result = DependenciesTui.collectPomAggregatorCoveredGAs(root, pomGAs);
+
+        // Classified descendant must be keyed as "g:a:classifier" to match DepEntry.ga()
+        assertThat(result).contains("org.example:lib-a:test-fixtures");
+        assertThat(result).doesNotContain("org.example:lib-a");
+    }
+
     // -- addDependencyAligned tests --
 
     @Test

@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import eu.maveniverse.domtrip.maven.AlignOptions;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
 import org.junit.jupiter.api.Test;
@@ -614,7 +615,7 @@ class AlignBatchTest {
 
         var rootProject = createPilotProject("root", rootPom);
         var parentProject = createPilotProject("parent", parentPom);
-        parentProject = withManagedDeps(parentProject);
+        parentProject = withNManagedDeps(parentProject, 1);
         var childProject = createPilotProject("child", childPom);
 
         // Set parent chain: child → parent → root
@@ -662,6 +663,102 @@ class AlignBatchTest {
         assertThat(result.pomPath()).isEqualTo(parentPom.toString());
     }
 
+    @Test
+    void findManagementPomPicksAncestorWithMostManagedDeps(@TempDir Path root) throws Exception {
+        // Simulate: root (3 managed deps) → parent (1 managed dep) → child
+        // Expected: root wins because it has the highest score
+        Path rootPom = writePom(root.resolve("root"), "");
+        Path parentPom = writePom(root.resolve("parent"), "");
+        Path childPom = writePom(root.resolve("child"), "");
+
+        var rootProject = createPilotProject("root", rootPom);
+        rootProject = withNManagedDeps(rootProject, 3);
+        var parentProject = createPilotProject("parent", parentPom);
+        parentProject = withNManagedDeps(parentProject, 1);
+        var childProject = createPilotProject("child", childPom);
+
+        childProject.parent = parentProject;
+        parentProject.parent = rootProject;
+
+        var result = AlignHelper.findParentPomInfo(childProject, List.of(rootProject, parentProject, childProject));
+
+        assertThat(result).isNotNull();
+        assertThat(result.pomPath()).isEqualTo(rootPom.toString());
+    }
+
+    @Test
+    void findManagementPomTieBreaksToHigherAncestor(@TempDir Path root) throws Exception {
+        // Simulate: root (2 managed deps) → parent (2 managed deps) → child
+        // Expected: root wins on tie (higher in hierarchy)
+        Path rootPom = writePom(root.resolve("root"), "");
+        Path parentPom = writePom(root.resolve("parent"), "");
+        Path childPom = writePom(root.resolve("child"), "");
+
+        var rootProject = createPilotProject("root", rootPom);
+        rootProject = withNManagedDeps(rootProject, 2);
+        var parentProject = createPilotProject("parent", parentPom);
+        parentProject = withNManagedDeps(parentProject, 2);
+        var childProject = createPilotProject("child", childPom);
+
+        childProject.parent = parentProject;
+        parentProject.parent = rootProject;
+
+        var result = AlignHelper.findParentPomInfo(childProject, List.of(rootProject, parentProject, childProject));
+
+        assertThat(result).isNotNull();
+        assertThat(result.pomPath()).isEqualTo(rootPom.toString());
+    }
+
+    @Test
+    void findManagementPomIgnoresAncestorsOutsideReactor(@TempDir Path root) throws Exception {
+        // Simulate: external-parent (5 managed deps, NOT in reactor) → parent (1 managed dep) → child
+        // Expected: parent wins, external-parent is ignored
+        Path externalPom = writePom(root.resolve("external"), "");
+        Path parentPom = writePom(root.resolve("parent"), "");
+        Path childPom = writePom(root.resolve("child"), "");
+
+        var externalProject = createPilotProject("external", externalPom);
+        externalProject = withNManagedDeps(externalProject, 5);
+        var parentProject = createPilotProject("parent", parentPom);
+        parentProject = withNManagedDeps(parentProject, 1);
+        var childProject = createPilotProject("child", childPom);
+
+        childProject.parent = parentProject;
+        parentProject.parent = externalProject;
+
+        // Reactor only contains parent + child, not external
+        var result = AlignHelper.findParentPomInfo(childProject, List.of(parentProject, childProject));
+
+        assertThat(result).isNotNull();
+        assertThat(result.pomPath()).isEqualTo(parentPom.toString());
+    }
+
+    @Test
+    void findManagementPomEnginePicksMaxScore() {
+        // Test PilotEngine.findManagementPom directly with a 3-level reactor
+        // root (5 deps) > parent (2 deps) → expected: root
+        var rootProject = makeEngineProject("root", 5);
+        var parentProject = makeEngineProject("parent", 2);
+        var childProject = makeEngineProject("child", 0);
+
+        childProject.parent = parentProject;
+        parentProject.parent = rootProject;
+
+        var result = PilotEngine.findManagementPom(List.of(rootProject, parentProject, childProject));
+        assertThat(result.artifactId).isEqualTo("root");
+    }
+
+    @Test
+    void findManagementPomEngineFallsBackToReactorRoot() {
+        // No ancestor has any managed deps → fallback is projects.get(0)
+        var rootProject = makeEngineProject("root", 0);
+        var childProject = makeEngineProject("child", 0);
+        childProject.parent = rootProject;
+
+        var result = PilotEngine.findManagementPom(List.of(rootProject, childProject));
+        assertThat(result.artifactId).isEqualTo("root");
+    }
+
     // ── helpers for PilotProject creation ──────────────────────────────────
 
     private static PilotProject createPilotProject(String artifactId, Path pomFile) {
@@ -681,8 +778,11 @@ class AlignBatchTest {
                 null);
     }
 
-    private static PilotProject withManagedDeps(PilotProject base) {
-        PilotProject.Dep dep = new PilotProject.Dep("org.example", "lib", "1.0");
+    private static PilotProject withNManagedDeps(PilotProject base, int n) {
+        List<PilotProject.Dep> deps = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            deps.add(new PilotProject.Dep("org.example", "lib" + i, "1." + i));
+        }
         PilotProject pp = new PilotProject(
                 base.groupId,
                 base.artifactId,
@@ -693,11 +793,32 @@ class AlignBatchTest {
                 base.dependencies,
                 base.managedDependencies,
                 base.originalDependencies,
-                List.of(dep),
+                deps,
                 base.originalProperties,
                 base.outputDirectory,
                 base.testOutputDirectory);
         pp.parent = base.parent;
         return pp;
+    }
+
+    private static PilotProject makeEngineProject(String artifactId, int managedDepCount) {
+        List<PilotProject.Dep> deps = new ArrayList<>();
+        for (int i = 0; i < managedDepCount; i++) {
+            deps.add(new PilotProject.Dep("org.example", artifactId + "-lib" + i, "1." + i));
+        }
+        return new PilotProject(
+                "test",
+                artifactId,
+                "1.0",
+                "pom",
+                Path.of("/fake/" + artifactId),
+                Path.of("/fake/" + artifactId + "/pom.xml"),
+                List.of(),
+                deps,
+                List.of(),
+                deps,
+                new Properties(),
+                null,
+                null);
     }
 }

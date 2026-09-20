@@ -204,6 +204,152 @@ class DependenciesTuiTest {
         assertThat(classified.orElseThrow().classifier).isEqualTo("test-fixtures");
     }
 
+    // -- collectPomAggregatorCoveredGAs tests --
+
+    private DependencyTreeModel.TreeNode treeNodeWithExtension(
+            String g, String a, String extension, String v, String scope) {
+        return new DependencyTreeModel.TreeNode(g, a, "", extension, v, scope, false, 0);
+    }
+
+    @Test
+    void collectPomAggregatorCoveredGAs_emptyWhenNoPomAggregators() {
+        var root = treeNode("com.example", "app", "1.0", "compile");
+        var jarDep = treeNode("org.slf4j", "slf4j-api", "2.0.9", "compile");
+        var transitive = treeNode("org.slf4j", "slf4j-impl", "2.0.9", "runtime");
+        jarDep.children.add(transitive);
+        root.children.add(jarDep);
+
+        Set<String> result = DependenciesTui.collectPomAggregatorCoveredGAs(root, Set.of());
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void collectPomAggregatorCoveredGAs_suppressesExclusivePomTransitives() {
+        // root -> pom-aggregator (type=pom) -> lib-a, lib-b
+        var root = treeNode("com.example", "app", "1.0", "compile");
+        var pomAgg = treeNodeWithExtension("org.example", "all-components", "pom", "1.0", "provided");
+        var libA = treeNode("org.example", "lib-a", "1.0", "provided");
+        var libB = treeNode("org.example", "lib-b", "1.0", "provided");
+        pomAgg.children.add(libA);
+        pomAgg.children.add(libB);
+        root.children.add(pomAgg);
+
+        Set<String> pomGAs = Set.of("org.example:all-components");
+        Set<String> result = DependenciesTui.collectPomAggregatorCoveredGAs(root, pomGAs);
+
+        assertThat(result).containsExactlyInAnyOrder("org.example:lib-a", "org.example:lib-b");
+    }
+
+    @Test
+    void collectPomAggregatorCoveredGAs_excludesSharedTransitives() {
+        // root -> pom-aggregator -> lib-a
+        //      -> jar-dep        -> lib-a (shared via non-pom path)
+        // lib-a is reachable via both paths → must NOT be suppressed
+        var root = treeNode("com.example", "app", "1.0", "compile");
+        var pomAgg = treeNodeWithExtension("org.example", "all-components", "pom", "1.0", "provided");
+        var jarDep = treeNode("com.example", "lib", "1.0", "compile");
+        var libA1 = treeNode("org.example", "lib-a", "1.0", "provided");
+        var libA2 = treeNode("org.example", "lib-a", "1.0", "compile");
+        pomAgg.children.add(libA1);
+        jarDep.children.add(libA2);
+        root.children.add(pomAgg);
+        root.children.add(jarDep);
+
+        Set<String> pomGAs = Set.of("org.example:all-components");
+        Set<String> result = DependenciesTui.collectPomAggregatorCoveredGAs(root, pomGAs);
+
+        // lib-a is also reachable via jarDep → not exclusively pom-covered → not in result
+        assertThat(result).doesNotContain("org.example:lib-a");
+    }
+
+    @Test
+    void collectPomAggregatorCoveredGAs_suppressesDeepTransitives() {
+        // root -> pom-aggregator -> lib-a -> lib-b (deep transitive)
+        var root = treeNode("com.example", "app", "1.0", "compile");
+        var pomAgg = treeNodeWithExtension("org.example", "all-components", "pom", "1.0", "provided");
+        var libA = treeNode("org.example", "lib-a", "1.0", "provided");
+        var libB = treeNode("org.example", "lib-b", "1.0", "provided");
+        libA.children.add(libB);
+        pomAgg.children.add(libA);
+        root.children.add(pomAgg);
+
+        Set<String> pomGAs = Set.of("org.example:all-components");
+        Set<String> result = DependenciesTui.collectPomAggregatorCoveredGAs(root, pomGAs);
+
+        assertThat(result).containsExactlyInAnyOrder("org.example:lib-a", "org.example:lib-b");
+    }
+
+    @Test
+    void collectPomAggregatorCoveredGAs_multiplePomAggregators() {
+        // root -> agg1 (pom) -> lib-a
+        //      -> agg2 (pom) -> lib-b
+        //      -> jar-dep    -> lib-c
+        var root = treeNode("com.example", "app", "1.0", "compile");
+        var agg1 = treeNodeWithExtension("org.example", "agg1", "pom", "1.0", "provided");
+        var agg2 = treeNodeWithExtension("org.example", "agg2", "pom", "1.0", "provided");
+        var jarDep = treeNode("com.example", "lib", "1.0", "compile");
+        agg1.children.add(treeNode("org.example", "lib-a", "1.0", "provided"));
+        agg2.children.add(treeNode("org.example", "lib-b", "1.0", "provided"));
+        jarDep.children.add(treeNode("org.example", "lib-c", "1.0", "compile"));
+        root.children.add(agg1);
+        root.children.add(agg2);
+        root.children.add(jarDep);
+
+        Set<String> pomGAs = Set.of("org.example:agg1", "org.example:agg2");
+        Set<String> result = DependenciesTui.collectPomAggregatorCoveredGAs(root, pomGAs);
+
+        assertThat(result).containsExactlyInAnyOrder("org.example:lib-a", "org.example:lib-b");
+        assertThat(result).doesNotContain("org.example:lib-c");
+    }
+
+    @Test
+    void collectPomAggregatorCoveredGAs_jarSharingGANotMisidentifiedAsPomAggregator() {
+        // root -> jar-dep  (org.example:comp, extension="jar") -> lib-a
+        //      -> pom-dep  (org.example:comp, extension="pom") -> lib-b
+        // Only the pom-dep subtree should be pom-covered; lib-a must NOT be suppressed.
+        var root = treeNode("com.example", "app", "1.0", "compile");
+        var jarDep = treeNodeWithExtension("org.example", "comp", "jar", "1.0", "compile");
+        var pomDep = treeNodeWithExtension("org.example", "comp", "pom", "1.0", "provided");
+        var libA = treeNode("org.example", "lib-a", "1.0", "compile");
+        var libB = treeNode("org.example", "lib-b", "1.0", "provided");
+        jarDep.children.add(libA);
+        pomDep.children.add(libB);
+        root.children.add(jarDep);
+        root.children.add(pomDep);
+
+        Set<String> pomGAs = Set.of("org.example:comp");
+        Set<String> result = DependenciesTui.collectPomAggregatorCoveredGAs(root, pomGAs);
+
+        // lib-b only reachable via pom subtree → suppressed
+        assertThat(result).contains("org.example:lib-b");
+        // lib-a reachable via jar subtree → must NOT be suppressed
+        assertThat(result).doesNotContain("org.example:lib-a");
+    }
+
+    private DependencyTreeModel.TreeNode treeNodeWithClassifier(
+            String g, String a, String classifier, String extension, String v, String scope) {
+        return new DependencyTreeModel.TreeNode(g, a, classifier, extension, v, scope, false, 0);
+    }
+
+    @Test
+    void collectPomAggregatorCoveredGAs_classifiedDescendantSuppressed() {
+        // root -> pom-agg (pom) -> lib-a:test-fixtures (classified)
+        // The classified descendant should be collected with key "g:a:classifier"
+        // so that it matches DepEntry.ga() during removeIf filtering.
+        var root = treeNode("com.example", "app", "1.0", "compile");
+        var pomAgg = treeNodeWithExtension("org.example", "all-components", "pom", "1.0", "provided");
+        var classifiedDep = treeNodeWithClassifier("org.example", "lib-a", "test-fixtures", "", "1.0", "test");
+        pomAgg.children.add(classifiedDep);
+        root.children.add(pomAgg);
+
+        Set<String> pomGAs = Set.of("org.example:all-components");
+        Set<String> result = DependenciesTui.collectPomAggregatorCoveredGAs(root, pomGAs);
+
+        // Classified descendant must be keyed as "g:a:classifier" to match DepEntry.ga()
+        assertThat(result).contains("org.example:lib-a:test-fixtures");
+        assertThat(result).doesNotContain("org.example:lib-a");
+    }
+
     // -- addDependencyAligned tests --
 
     @Test

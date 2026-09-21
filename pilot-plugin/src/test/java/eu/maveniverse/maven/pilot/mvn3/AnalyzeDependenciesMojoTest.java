@@ -23,15 +23,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import eu.maveniverse.maven.pilot.DependenciesTui;
 import eu.maveniverse.maven.pilot.DependencyUsageAnalyzer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.apache.maven.model.Build;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.project.MavenProject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
-@SuppressWarnings("deprecation")
+@SuppressWarnings({"deprecation", "removal"})
 class AnalyzeDependenciesMojoTest {
 
     private final AnalyzeDependenciesMojo mojo = new AnalyzeDependenciesMojo(null);
@@ -174,5 +179,136 @@ class AnalyzeDependenciesMojoTest {
         assertThatThrownBy(invalidMojo::execute)
                 .isInstanceOf(MojoExecutionException.class)
                 .hasMessageContaining("Invalid action 'invalid'");
+    }
+
+    // --- applyResults: USED_IN_TEST bucketing ---
+
+    private static MavenProject tempProject(Path tmp) throws Exception {
+        Path pom = tmp.resolve("pom.xml");
+        Files.writeString(pom, "<project/>");
+        var proj = new MavenProject();
+        proj.setFile(pom.toFile());
+        var build = new Build();
+        build.setOutputDirectory(tmp.resolve("classes").toString());
+        build.setTestOutputDirectory(tmp.resolve("test-classes").toString());
+        proj.setBuild(build);
+        return proj;
+    }
+
+    private static MavenProject tempProjectWithDep(Path tmp, String groupId, String artifactId) throws Exception {
+        Path pom = tmp.resolve("pom.xml");
+        Files.writeString(pom, """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>%s</groupId>
+                      <artifactId>%s</artifactId>
+                      <version>1.0</version>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """.formatted(groupId, artifactId));
+        var proj = new MavenProject();
+        proj.setFile(pom.toFile());
+        var build = new Build();
+        build.setOutputDirectory(tmp.resolve("classes").toString());
+        build.setTestOutputDirectory(tmp.resolve("test-classes").toString());
+        proj.setBuild(build);
+        return proj;
+    }
+
+    @Test
+    void applyResults_usedInTest_declared_escalatesToCheckFailure(@TempDir Path tmp) throws Exception {
+        var analyzeMojo = new AnalyzeDependenciesMojo(null);
+        MojoTestHelper.setField(analyzeMojo, "action", "check");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "compile-test-only", "", "1.0", "compile", true);
+        var result = new DependencyUsageAnalyzer.AnalysisResult(
+                Map.of("com.example:compile-test-only", DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST), Map.of());
+        MavenProject proj = tempProject(tmp);
+
+        assertThatThrownBy(() -> analyzeMojo.applyResults(proj, List.of(dep), List.of(), result, Map.of()))
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("com.example:compile-test-only")
+                .hasMessageContaining("narrowed to test");
+    }
+
+    @Test
+    void applyResults_usedInTest_transitive_escalatesToCheckFailure(@TempDir Path tmp) throws Exception {
+        var analyzeMojo = new AnalyzeDependenciesMojo(null);
+        MojoTestHelper.setField(analyzeMojo, "action", "check");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "test-only-transitive", "", "1.0", "compile", false);
+        dep.usageStatus = DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST;
+        var result = new DependencyUsageAnalyzer.AnalysisResult(
+                Map.of(), Map.of("com.example:test-only-transitive", DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST));
+        MavenProject proj = tempProject(tmp);
+
+        assertThatThrownBy(() -> analyzeMojo.applyResults(proj, List.of(), List.of(dep), result, Map.of()))
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("com.example:test-only-transitive");
+    }
+
+    @Test
+    void applyResults_noIssues_returnsCleanly(@TempDir Path tmp) throws Exception {
+        var analyzeMojo = new AnalyzeDependenciesMojo(null);
+        MojoTestHelper.setField(analyzeMojo, "action", "check");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "used-lib", "", "1.0", "compile", true);
+        var result = new DependencyUsageAnalyzer.AnalysisResult(
+                Map.of("com.example:used-lib", DependencyUsageAnalyzer.UsageStatus.USED), Map.of());
+        MavenProject proj = tempProject(tmp);
+
+        // No issues — should not throw
+        analyzeMojo.applyResults(proj, List.of(dep), List.of(), result, Map.of());
+    }
+
+    @Test
+    void applyResults_usedInTest_transitive_createsTestScopedCopy(@TempDir Path tmp) throws Exception {
+        // Transitive USED_IN_TEST must be promoted as test-scoped WITHOUT mutating the original entry
+        var analyzeMojo = new AnalyzeDependenciesMojo(null);
+        MojoTestHelper.setField(analyzeMojo, "action", "report");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "test-only-transitive", "", "1.0", "compile", false);
+        var result = new DependencyUsageAnalyzer.AnalysisResult(
+                Map.of(), Map.of("com.example:test-only-transitive", DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST));
+        MavenProject proj = tempProject(tmp);
+
+        analyzeMojo.applyResults(proj, List.of(), List.of(dep), result, Map.of());
+
+        // Original dep must not be mutated
+        assertThat(dep.scope).isEqualTo("compile");
+    }
+
+    @Test
+    void applyResults_usedInTest_declared_report_producesWarning(@TempDir Path tmp) throws Exception {
+        // report action: USED_IN_TEST declared dep must produce a warning, not throw.
+        var analyzeMojo = new AnalyzeDependenciesMojo(null);
+        MojoTestHelper.setField(analyzeMojo, "action", "report");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "compile-test-only", "", "1.0", "compile", true);
+        var result = new DependencyUsageAnalyzer.AnalysisResult(
+                Map.of("com.example:compile-test-only", DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST), Map.of());
+        MavenProject proj = tempProject(tmp);
+
+        // Should not throw
+        analyzeMojo.applyResults(proj, List.of(dep), List.of(), result, Map.of());
+    }
+
+    @Test
+    void applyResults_usedInTest_declared_fix_narrowsScopeInPom(@TempDir Path tmp) throws Exception {
+        // fix action: USED_IN_TEST declared dep must have its scope narrowed to test in the POM.
+        var analyzeMojo = new AnalyzeDependenciesMojo(null);
+        MojoTestHelper.setField(analyzeMojo, "action", "fix");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "compile-test-only", "", "1.0", "compile", true);
+        var result = new DependencyUsageAnalyzer.AnalysisResult(
+                Map.of("com.example:compile-test-only", DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST), Map.of());
+        MavenProject proj = tempProjectWithDep(tmp, "com.example", "compile-test-only");
+
+        analyzeMojo.applyResults(proj, List.of(dep), List.of(), result, Map.of());
+
+        String pomContent = Files.readString(proj.getFile().toPath());
+        assertThat(pomContent).contains("<scope>test</scope>");
     }
 }

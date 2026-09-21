@@ -47,7 +47,7 @@ public final class DependenciesReporter {
      */
     public static String formatFindings(
             List<DependenciesTui.DepEntry> unusedDeclared, List<DependenciesTui.DepEntry> usedTransitive) {
-        return formatFindings(unusedDeclared, usedTransitive, List.of());
+        return formatFindings(unusedDeclared, List.of(), usedTransitive, List.of());
     }
 
     /**
@@ -61,6 +61,22 @@ public final class DependenciesReporter {
             List<DependenciesTui.DepEntry> unusedDeclared,
             List<DependenciesTui.DepEntry> usedTransitive,
             List<DependenciesTui.DepEntry> undetermined) {
+        return formatFindings(unusedDeclared, List.of(), usedTransitive, undetermined);
+    }
+
+    /**
+     * Format a text report of dependency findings, including test-scope narrowing and undetermined dependencies.
+     *
+     * @param unusedDeclared     declared dependencies confirmed unused (can be removed)
+     * @param testScopedDeclared declared dependencies used only in tests (scope should be narrowed to test)
+     * @param usedTransitive     transitive dependencies confirmed used (should be declared)
+     * @param undetermined       dependencies whose usage could not be determined
+     */
+    public static String formatFindings(
+            List<DependenciesTui.DepEntry> unusedDeclared,
+            List<DependenciesTui.DepEntry> testScopedDeclared,
+            List<DependenciesTui.DepEntry> usedTransitive,
+            List<DependenciesTui.DepEntry> undetermined) {
         StringBuilder sb = new StringBuilder();
         if (!unusedDeclared.isEmpty()) {
             sb.append("Unused declared dependenc");
@@ -72,8 +88,21 @@ public final class DependenciesReporter {
                 sb.append("\n");
             }
         }
-        if (!usedTransitive.isEmpty()) {
+        if (!testScopedDeclared.isEmpty()) {
             if (!unusedDeclared.isEmpty()) {
+                sb.append("\n");
+            }
+            sb.append("Declared dependenc");
+            sb.append(testScopedDeclared.size() == 1 ? "y" : "ies");
+            sb.append(" used only in tests (scope should be narrowed to test):\n");
+            for (var dep : testScopedDeclared) {
+                sb.append("  - ").append(dep.ga());
+                appendScope(sb, dep);
+                sb.append("\n");
+            }
+        }
+        if (!usedTransitive.isEmpty()) {
+            if (!unusedDeclared.isEmpty() || !testScopedDeclared.isEmpty()) {
                 sb.append("\n");
             }
             sb.append("Used transitive dependenc");
@@ -86,7 +115,7 @@ public final class DependenciesReporter {
             }
         }
         if (!undetermined.isEmpty()) {
-            if (!unusedDeclared.isEmpty() || !usedTransitive.isEmpty()) {
+            if (!unusedDeclared.isEmpty() || !testScopedDeclared.isEmpty() || !usedTransitive.isEmpty()) {
                 sb.append("\n");
             }
             sb.append("Undetermined dependenc");
@@ -106,7 +135,7 @@ public final class DependenciesReporter {
      */
     public static String formatCheckFailure(
             List<DependenciesTui.DepEntry> unusedDeclared, List<DependenciesTui.DepEntry> usedTransitive) {
-        return formatCheckFailure(unusedDeclared, usedTransitive, List.of());
+        return formatCheckFailure(unusedDeclared, List.of(), usedTransitive, List.of());
     }
 
     /**
@@ -116,8 +145,19 @@ public final class DependenciesReporter {
             List<DependenciesTui.DepEntry> unusedDeclared,
             List<DependenciesTui.DepEntry> usedTransitive,
             List<DependenciesTui.DepEntry> undetermined) {
-        String findings = formatFindings(unusedDeclared, usedTransitive, undetermined);
-        boolean hasRealIssues = !unusedDeclared.isEmpty() || !usedTransitive.isEmpty();
+        return formatCheckFailure(unusedDeclared, List.of(), usedTransitive, undetermined);
+    }
+
+    /**
+     * Format a check-failure message, including test-scope narrowing and undetermined dependencies.
+     */
+    public static String formatCheckFailure(
+            List<DependenciesTui.DepEntry> unusedDeclared,
+            List<DependenciesTui.DepEntry> testScopedDeclared,
+            List<DependenciesTui.DepEntry> usedTransitive,
+            List<DependenciesTui.DepEntry> undetermined) {
+        String findings = formatFindings(unusedDeclared, testScopedDeclared, usedTransitive, undetermined);
+        boolean hasRealIssues = !unusedDeclared.isEmpty() || !usedTransitive.isEmpty() || !testScopedDeclared.isEmpty();
         if (hasRealIssues) {
             return findings
                     + "\nRun with -Dpilot.action=fix to apply changes, or configure allowlists for false positives.";
@@ -127,7 +167,8 @@ public final class DependenciesReporter {
     }
 
     /**
-     * Apply fixes to the POM: remove unused declared and add used transitive dependencies.
+     * Apply fixes to the POM: remove unused declared, narrow test-only declared to test scope,
+     * and add used transitive dependencies.
      *
      * <p>When adding used transitive dependencies, honours ancestor dependency management:</p>
      * <ul>
@@ -139,6 +180,7 @@ public final class DependenciesReporter {
      *
      * @param pomPath               path to the POM file to modify
      * @param unusedDeclared        declared dependencies that are unused
+     * @param testScopedDeclared    declared dependencies used only in tests (scope narrowed to test)
      * @param usedTransitive        transitive dependencies that are used directly
      * @param gaToVersion           resolved (literal) versions keyed by {@code groupId:artifactId}
      * @param ancestorManagedGAs    GAs already version-managed by an ancestor; version is omitted for these
@@ -147,6 +189,7 @@ public final class DependenciesReporter {
     public static void fix(
             Path pomPath,
             List<DependenciesTui.DepEntry> unusedDeclared,
+            List<DependenciesTui.DepEntry> testScopedDeclared,
             List<DependenciesTui.DepEntry> usedTransitive,
             Map<String, String> gaToVersion,
             Set<String> ancestorManagedGAs,
@@ -163,6 +206,25 @@ public final class DependenciesReporter {
             editor.dependencies().deleteDependency(coords);
             pomContent = editor.toXml();
             logger.log("Removed unused dependency: " + dep.ga());
+        }
+
+        for (var dep : testScopedDeclared) {
+            PomEditor editor = new PomEditor(Document.of(pomContent));
+            String[] parts = dep.ga().split(":");
+            Coordinates coords = parts.length > 2
+                    ? Coordinates.of(parts[0], parts[1], null, parts[2], "jar")
+                    : Coordinates.of(parts[0], parts[1], null);
+            editor.document()
+                    .root()
+                    .childElement("dependencies")
+                    .flatMap(depsEl -> depsEl.childElements("dependency")
+                            .filter(coords.predicateGA())
+                            .findFirst())
+                    .ifPresent(depEl -> {
+                        editor.updateOrCreateChildElement(depEl, "scope", "test");
+                        logger.log("Narrowed to test scope (used only in tests): " + dep.ga());
+                    });
+            pomContent = editor.toXml();
         }
 
         for (var dep : usedTransitive) {
@@ -202,6 +264,27 @@ public final class DependenciesReporter {
     }
 
     /**
+     * Apply fixes to the POM without test-scope awareness (backward-compatible overload).
+     *
+     * @param pomPath            path to the POM file to modify
+     * @param unusedDeclared     declared dependencies that are unused
+     * @param usedTransitive     transitive dependencies that are used directly
+     * @param gaToVersion        resolved (literal) versions keyed by {@code groupId:artifactId}
+     * @param ancestorManagedGAs GAs already version-managed by an ancestor; version is omitted for these
+     * @param logger             callback for progress messages
+     */
+    public static void fix(
+            Path pomPath,
+            List<DependenciesTui.DepEntry> unusedDeclared,
+            List<DependenciesTui.DepEntry> usedTransitive,
+            Map<String, String> gaToVersion,
+            Set<String> ancestorManagedGAs,
+            FixLogger logger)
+            throws IOException {
+        fix(pomPath, unusedDeclared, List.of(), usedTransitive, gaToVersion, ancestorManagedGAs, logger);
+    }
+
+    /**
      * Apply fixes to the POM without ancestor-management awareness (backward-compatible overload).
      *
      * @param pomPath        path to the POM file to modify
@@ -217,7 +300,7 @@ public final class DependenciesReporter {
             Map<String, String> gaToVersion,
             FixLogger logger)
             throws IOException {
-        fix(pomPath, unusedDeclared, usedTransitive, gaToVersion, Set.of(), logger);
+        fix(pomPath, unusedDeclared, List.of(), usedTransitive, gaToVersion, Set.of(), logger);
     }
 
     public static void appendScope(StringBuilder sb, DependenciesTui.DepEntry dep) {

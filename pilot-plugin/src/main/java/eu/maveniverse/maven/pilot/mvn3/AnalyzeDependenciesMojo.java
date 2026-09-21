@@ -159,7 +159,8 @@ public class AnalyzeDependenciesMojo extends AbstractMojo {
 
         Path testClassesDir = Path.of(proj.getBuild().getTestOutputDirectory());
         ClassFileScanner.ScanResult mainScan = ClassFileScanner.scanDirectory(classesDir);
-        ClassFileScanner.ScanResult testScan = Files.isDirectory(testClassesDir)
+        boolean testRefsAvailable = Files.isDirectory(testClassesDir);
+        ClassFileScanner.ScanResult testScan = testRefsAvailable
                 ? ClassFileScanner.scanDirectory(testClassesDir)
                 : new ClassFileScanner.ScanResult(Set.of(), Map.of());
 
@@ -167,15 +168,38 @@ public class AnalyzeDependenciesMojo extends AbstractMojo {
 
         DependencyUsageAnalyzer analyzer = buildAnalyzer();
         DependencyUsageAnalyzer.AnalysisResult usage = analyzer.analyze(
-                mainScan.referencedClasses(), testScan.referencedClasses(), classIndex, gaToJar, declared, transitive);
+                mainScan.referencedClasses(),
+                testScan.referencedClasses(),
+                classIndex,
+                gaToJar,
+                declared,
+                transitive,
+                testRefsAvailable);
 
+        applyResults(proj, declared, transitive, usage, gaToVersion);
+    }
+
+    /**
+     * Bucket analysis results and dispatch to the configured action (check / report / fix).
+     * Package-private for testing.
+     */
+    void applyResults(
+            MavenProject proj,
+            List<DependenciesTui.DepEntry> declared,
+            List<DependenciesTui.DepEntry> transitive,
+            DependencyUsageAnalyzer.AnalysisResult usage,
+            Map<String, String> gaToVersion)
+            throws Exception {
         // Find unused declared dependencies
         List<DependenciesTui.DepEntry> unusedDeclared = new ArrayList<>();
+        List<DependenciesTui.DepEntry> testScopedDeclared = new ArrayList<>();
         for (var dep : declared) {
             DependencyUsageAnalyzer.UsageStatus status =
                     usage.declaredUsage().getOrDefault(dep.ga(), DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
             if (status == DependencyUsageAnalyzer.UsageStatus.UNUSED) {
                 unusedDeclared.add(dep);
+            } else if (status == DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST) {
+                testScopedDeclared.add(dep);
             }
         }
 
@@ -186,6 +210,11 @@ public class AnalyzeDependenciesMojo extends AbstractMojo {
                     usage.transitiveUsage().getOrDefault(dep.ga(), DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
             if (status == DependencyUsageAnalyzer.UsageStatus.USED) {
                 usedTransitive.add(dep);
+            } else if (status == DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST) {
+                var testDep = new DependenciesTui.DepEntry(
+                        dep.groupId, dep.artifactId, dep.classifier, dep.version, "test", false);
+                testDep.usageStatus = status;
+                usedTransitive.add(testDep);
             }
         }
 
@@ -194,8 +223,9 @@ public class AnalyzeDependenciesMojo extends AbstractMojo {
         Set<String> ignoredTransitive = buildIgnoreSet(ignoredUsedTransitive);
         unusedDeclared.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredUnused));
         usedTransitive.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredTransitive));
+        testScopedDeclared.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredUnused));
 
-        if (unusedDeclared.isEmpty() && usedTransitive.isEmpty()) {
+        if (unusedDeclared.isEmpty() && testScopedDeclared.isEmpty() && usedTransitive.isEmpty()) {
             getLog().info("No dependency issues found.");
             return;
         }
@@ -205,13 +235,17 @@ public class AnalyzeDependenciesMojo extends AbstractMojo {
                 DependenciesReporter.fix(
                         proj.getFile().toPath(),
                         unusedDeclared,
+                        testScopedDeclared,
                         usedTransitive,
                         gaToVersion,
                         DependenciesMojo.buildAncestorManagedGAs(proj),
                         getLog()::info);
-            case "report" -> getLog().warn(DependenciesReporter.formatFindings(unusedDeclared, usedTransitive));
+            case "report" ->
+                getLog().warn(DependenciesReporter.formatFindings(
+                        unusedDeclared, testScopedDeclared, usedTransitive, List.of()));
             default ->
-                throw new MojoFailureException(DependenciesReporter.formatCheckFailure(unusedDeclared, usedTransitive));
+                throw new MojoFailureException(DependenciesReporter.formatCheckFailure(
+                        unusedDeclared, testScopedDeclared, usedTransitive, List.of()));
         }
     }
 

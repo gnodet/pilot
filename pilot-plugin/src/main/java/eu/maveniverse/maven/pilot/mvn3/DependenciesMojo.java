@@ -315,6 +315,7 @@ public class DependenciesMojo extends AbstractMojo {
                 : new ClassFileScanner.ScanResult(Set.of(), Map.of());
         boolean testClassesScanned = Files.isDirectory(testClassesDir);
         ClassFileScanner.ScanResult testScan;
+        boolean testRefsAvailable;
 
         if (skipTestScope) {
             getLog().info("Skipping test-scope dependency analysis (pilot.skipTestScope=true).");
@@ -323,11 +324,14 @@ public class DependenciesMojo extends AbstractMojo {
             declared.removeIf(dep -> DependencyUsageAnalyzer.isTestScope(dep.scope));
             transitive.removeIf(dep -> DependencyUsageAnalyzer.isTestScope(dep.scope));
             testScan = new ClassFileScanner.ScanResult(Set.of(), Map.of());
+            testRefsAvailable = false;
         } else if (hasTestSources && testClassesScanned) {
             testScan = ClassFileScanner.scanDirectory(testClassesDir);
+            testRefsAvailable = true;
         } else {
             // No test sources or no compiled test classes — proceed without test bytecode.
             testScan = new ClassFileScanner.ScanResult(Set.of(), Map.of());
+            testRefsAvailable = false;
         }
 
         Map<String, String> classIndex = DependencyUsageAnalyzer.buildClassIndex(gaToJar);
@@ -338,7 +342,8 @@ public class DependenciesMojo extends AbstractMojo {
                         classIndex,
                         gaToJar,
                         declared,
-                        transitive);
+                        transitive,
+                        testRefsAvailable);
         applyUsageStatus(declared, transitive, usage);
 
         executeNonInteractive(proj, declared, transitive, gaToVersion, ancestorManagedGAs);
@@ -469,10 +474,28 @@ public class DependenciesMojo extends AbstractMojo {
             }
         }
 
+        // Declared deps used only in tests should be narrowed to test scope, not removed.
+        List<DependenciesTui.DepEntry> testScopedDeclared = new ArrayList<>();
+        for (var dep : declared) {
+            if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST && dep.ownDeclared) {
+                testScopedDeclared.add(dep);
+            }
+        }
+
         List<DependenciesTui.DepEntry> usedTransitive = new ArrayList<>();
         for (var dep : transitive) {
             if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.USED) {
                 usedTransitive.add(dep);
+            }
+        }
+
+        // Transitive deps used only in tests should be promoted at test scope.
+        for (var dep : transitive) {
+            if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST) {
+                var testDep = new DependenciesTui.DepEntry(
+                        dep.groupId, dep.artifactId, dep.classifier, dep.version, "test", false);
+                testDep.usageStatus = dep.usageStatus;
+                usedTransitive.add(testDep);
             }
         }
 
@@ -490,12 +513,16 @@ public class DependenciesMojo extends AbstractMojo {
         Set<String> ignoredTransitive = buildIgnoreSet(ignoredUsedTransitive);
         unusedDeclared.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredUnused));
         usedTransitive.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredTransitive));
+        testScopedDeclared.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredUnused));
 
         // showUndetermined is opt-in; failOnUndetermined implies showing them
         List<DependenciesTui.DepEntry> visibleUndetermined =
                 (showUndetermined || failOnUndetermined) ? undetermined : List.of();
 
-        if (unusedDeclared.isEmpty() && usedTransitive.isEmpty() && visibleUndetermined.isEmpty()) {
+        if (unusedDeclared.isEmpty()
+                && usedTransitive.isEmpty()
+                && testScopedDeclared.isEmpty()
+                && visibleUndetermined.isEmpty()) {
             if (!undetermined.isEmpty()) {
                 getLog().debug(undetermined.size()
                         + " undetermined dep(s) hidden — use -Dpilot.showUndetermined=true to see them.");
@@ -509,22 +536,25 @@ public class DependenciesMojo extends AbstractMojo {
                 DependenciesReporter.fix(
                         proj.getFile().toPath(),
                         unusedDeclared,
+                        testScopedDeclared,
                         usedTransitive,
                         gaToVersion,
                         ancestorManagedGAs,
                         getLog()::info);
             case "report" ->
-                getLog().warn(DependenciesReporter.formatFindings(unusedDeclared, usedTransitive, visibleUndetermined));
+                getLog().warn(DependenciesReporter.formatFindings(
+                        unusedDeclared, testScopedDeclared, usedTransitive, visibleUndetermined));
             default -> {
-                boolean hasIssues = !unusedDeclared.isEmpty() || !usedTransitive.isEmpty();
+                boolean hasIssues =
+                        !unusedDeclared.isEmpty() || !usedTransitive.isEmpty() || !testScopedDeclared.isEmpty();
                 boolean hasUndetermined = !undetermined.isEmpty();
                 if (hasIssues || (hasUndetermined && failOnUndetermined)) {
                     throw new MojoFailureException(DependenciesReporter.formatCheckFailure(
-                            unusedDeclared, usedTransitive, visibleUndetermined));
+                            unusedDeclared, testScopedDeclared, usedTransitive, visibleUndetermined));
                 } else if (!visibleUndetermined.isEmpty()) {
                     // undetermined visible but failOnUndetermined=false — warn only
                     getLog().warn(DependenciesReporter.formatFindings(
-                            unusedDeclared, usedTransitive, visibleUndetermined));
+                            unusedDeclared, testScopedDeclared, usedTransitive, visibleUndetermined));
                 }
             }
         }

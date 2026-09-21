@@ -61,6 +61,19 @@ public final class DependencyUsageAnalyzer {
     private static final Set<String> TEST_SCOPES = Set.of("test", "test-only", "test-runtime");
 
     /**
+     * Scopes that can be narrowed to {@code test} when a dependency's classes are used only in tests.
+     *
+     * <p>Only {@code compile} and {@code compile-only} are eligible:
+     * <ul>
+     * <li>{@code provided} — the container supplies the artifact at runtime; narrowing to {@code test}
+     *     would silently remove it from the production runtime classpath.</li>
+     * <li>{@code runtime} — the artifact is loaded at runtime without bytecode references from main
+     *     sources; test-only class references do not justify narrowing it to {@code test} scope.</li>
+     * </ul>
+     */
+    private static final Set<String> NARROWABLE_TO_TEST_SCOPES = Set.of("compile", "compile-only");
+
+    /**
      * Returns {@code true} if the given Maven scope is test-only
      * ({@code test}, {@code test-only}, or {@code test-runtime}).
      *
@@ -70,6 +83,17 @@ public final class DependencyUsageAnalyzer {
      */
     public static boolean isTestScope(String scope) {
         return scope != null && TEST_SCOPES.contains(scope);
+    }
+
+    /**
+     * Returns {@code true} if the given Maven scope can be narrowed to {@code test} when the
+     * dependency's classes are used only in test bytecode.
+     *
+     * <p>Only {@code compile} and {@code compile-only} are narrowable; {@code provided} and
+     * {@code runtime} must remain on their original scope to preserve runtime correctness.</p>
+     */
+    public static boolean isNarrowableToTestScope(String scope) {
+        return scope != null && NARROWABLE_TO_TEST_SCOPES.contains(scope);
     }
 
     /**
@@ -92,6 +116,12 @@ public final class DependencyUsageAnalyzer {
 
     public enum UsageStatus {
         USED,
+        /**
+         * The dependency's classes are referenced only from test sources (target/test-classes),
+         * not from main sources (target/classes). For compile-scope dependencies, this means
+         * the scope should be narrowed to {@code test} rather than removed.
+         */
+        USED_IN_TEST,
         UNUSED,
         UNDETERMINED
     }
@@ -153,7 +183,9 @@ public final class DependencyUsageAnalyzer {
      * @param mainRefs
      *            class names referenced from {@code target/classes}
      * @param testRefs
-     *            class names referenced from {@code target/test-classes}
+     *            class names referenced from {@code target/test-classes}; an empty set is valid when test analysis
+     *            was performed and found no references, but callers must also pass {@code testRefsAvailable=true}
+     *            to distinguish this from "test bytecode was not scanned at all"
      * @param classIndex
      *            class name to GA mapping (from {@link #buildClassIndex})
      * @param gaToJar
@@ -162,6 +194,13 @@ public final class DependencyUsageAnalyzer {
      *            declared dependency entries
      * @param transitive
      *            transitive dependency entries
+     * @param testRefsAvailable
+     *            {@code true} when {@code testRefs} was populated from an actual scan of
+     *            {@code target/test-classes}; {@code false} when test compilation was skipped or
+     *            {@code target/test-classes} was absent. When {@code false}, narrowable dependencies
+     *            with no main references are classified as {@code UNDETERMINED} rather than
+     *            {@code USED_IN_TEST} or {@code UNUSED}, because the absence of test references is
+     *            not evidence that the dep is unused — the test scan simply did not run.
      *
      * @return analysis result with usage status for each dependency
      */
@@ -171,7 +210,8 @@ public final class DependencyUsageAnalyzer {
             Map<String, String> classIndex,
             Map<String, File> gaToJar,
             List<DependenciesTui.DepEntry> declared,
-            List<DependenciesTui.DepEntry> transitive) {
+            List<DependenciesTui.DepEntry> transitive,
+            boolean testRefsAvailable) {
 
         // Build reverse index: GA -> set of class names provided by that artifact
         Map<String, Set<String>> gaToClasses = new HashMap<>();
@@ -185,12 +225,14 @@ public final class DependencyUsageAnalyzer {
 
         Map<String, UsageStatus> declaredUsage = new HashMap<>();
         for (var dep : declared) {
-            declaredUsage.put(dep.ga(), classify(dep, gaToClasses, gaToJar, mainRefs, allRefs));
+            declaredUsage.put(
+                    dep.ga(), classify(dep, gaToClasses, gaToJar, mainRefs, testRefs, allRefs, testRefsAvailable));
         }
 
         Map<String, UsageStatus> transitiveUsage = new HashMap<>();
         for (var dep : transitive) {
-            transitiveUsage.put(dep.ga(), classify(dep, gaToClasses, gaToJar, mainRefs, allRefs));
+            transitiveUsage.put(
+                    dep.ga(), classify(dep, gaToClasses, gaToJar, mainRefs, testRefs, allRefs, testRefsAvailable));
         }
 
         return new AnalysisResult(declaredUsage, transitiveUsage);
@@ -201,13 +243,16 @@ public final class DependencyUsageAnalyzer {
             Map<String, Set<String>> gaToClasses,
             Map<String, File> gaToJar,
             Set<String> mainRefs,
-            Set<String> allRefs) {
+            Set<String> testRefs,
+            Set<String> allRefs,
+            boolean testRefsAvailable) {
 
         // Choose the appropriate reference set based on scope.
         // Maven 3 scopes: compile, provided, runtime, test, system.
         // Maven 4.1.0+ adds: compile-only, test-only, test-runtime.
         // Test-related scopes are checked against allRefs (main + test); others against mainRefs only.
-        Set<String> refs = isTestScope(dep.scope) ? allRefs : mainRefs;
+        boolean testScope = isTestScope(dep.scope);
+        Set<String> refs = testScope ? allRefs : mainRefs;
 
         Set<String> depClasses = gaToClasses.get(dep.ga());
         if (depClasses != null && !Collections.disjoint(depClasses, refs)) {
@@ -217,15 +262,35 @@ public final class DependencyUsageAnalyzer {
         // Check explicit allowlists before runtime-discovery classification, so that a user-supplied
         // runtimeArtifacts or annotationOnlyArtifacts entry always wins and is never shadowed by the
         // UNDETERMINED result that classifyByRuntimeDiscovery returns for ServiceLoader-registered deps.
+        // This must also run before the USED_IN_TEST check: a dep in runtimeArtifacts or
+        // annotationOnlyArtifacts may have its classes referenced only in test bytecode (e.g. an
+        // annotation processor used from test code), and must be classified USED — not narrowed to
+        // test scope — to avoid removing it from the production runtime classpath.
         if (matchesArtifactPattern(dep.ga(), annotationOnlyArtifacts)
                 || matchesArtifactPattern(dep.ga(), runtimeArtifacts)
                 || matchesReflectionLoadedClasses(dep.ga(), depClasses)) {
             return UsageStatus.USED;
         }
 
+        // Run runtime-discovery classification before the USED_IN_TEST check: a dep with
+        // ServiceLoader or DI registration metadata may have its classes referenced only in test
+        // bytecode (e.g. an SLF4J backend exercised by a test), but narrowing its scope to test
+        // would be wrong — the DI/SPI container loads it at runtime in production. UNDETERMINED
+        // is the safe return value in that case.
         UsageStatus discoveryStatus = classifyByRuntimeDiscovery(dep, gaToJar, refs);
         if (discoveryStatus != null) {
             return discoveryStatus;
+        }
+
+        // For compile-like scopes (compile, compile-only), check whether the dep is used exclusively
+        // in tests. If so, it should be narrowed to test scope rather than removed.
+        // This runs after the allowlists and after runtime-discovery so that runtime/annotation-only
+        // deps and SPI/DI-registered deps are not mistakenly narrowed when their classes appear only
+        // in test bytecode.
+        // NOTE: "provided" and "runtime" scopes are intentionally excluded — see NARROWABLE_TO_TEST_SCOPES.
+        UsageStatus testScopeStatus = classifyTestScopeNarrowing(dep.scope, depClasses, testRefs, testRefsAvailable);
+        if (testScopeStatus != null) {
+            return testScopeStatus;
         }
 
         // A JAR that contains public static final String/int/… fields (ConstantValue attribute)
@@ -238,6 +303,31 @@ public final class DependencyUsageAnalyzer {
         }
 
         return depClasses == null ? UsageStatus.UNDETERMINED : UsageStatus.UNUSED;
+    }
+
+    /**
+     * Determine whether a compile-like-scoped dependency should be classified as {@link UsageStatus#USED_IN_TEST}.
+     * <p>
+     * Only classify {@code USED_IN_TEST} when test refs were actually scanned. When {@code testRefsAvailable} is
+     * {@code false} (test compilation was skipped or {@code target/test-classes} was absent), the absence of test
+     * references is not evidence of test-only usage — the scan simply did not run. In that case,
+     * treat a narrowable dep with known classes and no main refs as {@code UNDETERMINED}.
+     * </p>
+     *
+     * @return {@link UsageStatus#USED_IN_TEST} if the dep is used exclusively in tests,
+     *         {@link UsageStatus#UNDETERMINED} if test bytecode was not scanned, or
+     *         {@code null} if this check does not apply (non-narrowable scope or no known classes).
+     */
+    private UsageStatus classifyTestScopeNarrowing(
+            String scope, Set<String> depClasses, Set<String> testRefs, boolean testRefsAvailable) {
+        if (!isNarrowableToTestScope(scope) || depClasses == null) {
+            return null;
+        }
+        if (!testRefsAvailable) {
+            // Test bytecode was not scanned — cannot distinguish test-only from genuinely unused.
+            return UsageStatus.UNDETERMINED;
+        }
+        return Collections.disjoint(depClasses, testRefs) ? null : UsageStatus.USED_IN_TEST;
     }
 
     /**

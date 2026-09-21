@@ -514,8 +514,10 @@ class DependenciesReporterTest {
         String result = Files.readString(pomPath);
         assertThat(result)
                 .doesNotContain("unused")
-                .satisfies(r -> assertThat(r).contains("test-only").contains("<scope>test</scope>"))
-                .satisfies(r -> assertThat(r).contains("org.needed").contains("lib"));
+                .contains("test-only")
+                .contains("<scope>test</scope>")
+                .contains("org.needed")
+                .contains("lib");
         assertThat(logs)
                 .anyMatch(l -> l.contains("Removed unused dependency: com.example:unused"))
                 .anyMatch(l -> l.contains("Narrowed to test scope") && l.contains("test-only"))

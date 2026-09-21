@@ -169,6 +169,20 @@ public class AnalyzeDependenciesMojo extends AbstractMojo {
         DependencyUsageAnalyzer.AnalysisResult usage = analyzer.analyze(
                 mainScan.referencedClasses(), testScan.referencedClasses(), classIndex, gaToJar, declared, transitive);
 
+        applyResults(proj, declared, transitive, usage, gaToVersion);
+    }
+
+    /**
+     * Bucket analysis results and dispatch to the configured action (check / report / fix).
+     * Package-private for testing.
+     */
+    void applyResults(
+            MavenProject proj,
+            List<DependenciesTui.DepEntry> declared,
+            List<DependenciesTui.DepEntry> transitive,
+            DependencyUsageAnalyzer.AnalysisResult usage,
+            Map<String, String> gaToVersion)
+            throws Exception {
         // Find unused declared dependencies
         List<DependenciesTui.DepEntry> unusedDeclared = new ArrayList<>();
         List<DependenciesTui.DepEntry> testScopedDeclared = new ArrayList<>();

@@ -197,7 +197,6 @@ class AnalyzeDependenciesMojoTest {
 
     @Test
     void applyResults_usedInTest_declared_escalatesToCheckFailure(@TempDir Path tmp) throws Exception {
-        var mojo = new AnalyzeDependenciesMojo(null);
         MojoTestHelper.setField(mojo, "action", "check");
 
         var dep = new DependenciesTui.DepEntry("com.example", "compile-test-only", "", "1.0", "compile", true);
@@ -213,7 +212,6 @@ class AnalyzeDependenciesMojoTest {
 
     @Test
     void applyResults_usedInTest_transitive_escalatesToCheckFailure(@TempDir Path tmp) throws Exception {
-        var mojo = new AnalyzeDependenciesMojo(null);
         MojoTestHelper.setField(mojo, "action", "check");
 
         var dep = new DependenciesTui.DepEntry("com.example", "test-only-transitive", "", "1.0", "compile", false);
@@ -229,7 +227,6 @@ class AnalyzeDependenciesMojoTest {
 
     @Test
     void applyResults_noIssues_returnsCleanly(@TempDir Path tmp) throws Exception {
-        var mojo = new AnalyzeDependenciesMojo(null);
         MojoTestHelper.setField(mojo, "action", "check");
 
         var dep = new DependenciesTui.DepEntry("com.example", "used-lib", "", "1.0", "compile", true);
@@ -244,7 +241,6 @@ class AnalyzeDependenciesMojoTest {
     @Test
     void applyResults_usedInTest_transitive_createsTestScopedCopy(@TempDir Path tmp) throws Exception {
         // Transitive USED_IN_TEST must be promoted as test-scoped WITHOUT mutating the original entry
-        var mojo = new AnalyzeDependenciesMojo(null);
         MojoTestHelper.setField(mojo, "action", "report");
 
         var dep = new DependenciesTui.DepEntry("com.example", "test-only-transitive", "", "1.0", "compile", false);
@@ -256,5 +252,31 @@ class AnalyzeDependenciesMojoTest {
 
         // Original dep must not be mutated
         assertThat(dep.scope).isEqualTo("compile");
+    }
+
+    @Test
+    void applyResults_unusedDeclared_reportAction_logsWarning(@TempDir Path tmp) throws Exception {
+        MojoTestHelper.setField(mojo, "action", "report");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "unused-lib", "", "1.0", "compile", true);
+        var result = new DependencyUsageAnalyzer.AnalysisResult(
+                Map.of("com.example:unused-lib", DependencyUsageAnalyzer.UsageStatus.UNUSED), Map.of());
+        MavenProject proj = tempProject(tmp);
+
+        // report action: should not throw even with unused declared deps
+        mojo.applyResults(proj, List.of(dep), List.of(), result, Map.of());
+    }
+
+    @Test
+    void applyResults_usedTransitive_reportAction(@TempDir Path tmp) throws Exception {
+        MojoTestHelper.setField(mojo, "action", "report");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "transitive-lib", "", "1.0", "compile", false);
+        var result = new DependencyUsageAnalyzer.AnalysisResult(
+                Map.of(), Map.of("com.example:transitive-lib", DependencyUsageAnalyzer.UsageStatus.USED));
+        MavenProject proj = tempProject(tmp);
+
+        // USED transitive promotes to usedTransitive list — report action should not throw
+        mojo.applyResults(proj, List.of(), List.of(dep), result, Map.of());
     }
 }

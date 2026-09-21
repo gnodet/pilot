@@ -315,6 +315,7 @@ public class DependenciesMojo extends AbstractMojo {
                 : new ClassFileScanner.ScanResult(Set.of(), Map.of());
         boolean testClassesScanned = Files.isDirectory(testClassesDir);
         ClassFileScanner.ScanResult testScan;
+        boolean testRefsAvailable;
 
         if (skipTestScope) {
             getLog().info("Skipping test-scope dependency analysis (pilot.skipTestScope=true).");
@@ -323,11 +324,14 @@ public class DependenciesMojo extends AbstractMojo {
             declared.removeIf(dep -> DependencyUsageAnalyzer.isTestScope(dep.scope));
             transitive.removeIf(dep -> DependencyUsageAnalyzer.isTestScope(dep.scope));
             testScan = new ClassFileScanner.ScanResult(Set.of(), Map.of());
+            testRefsAvailable = false;
         } else if (hasTestSources && testClassesScanned) {
             testScan = ClassFileScanner.scanDirectory(testClassesDir);
+            testRefsAvailable = true;
         } else {
             // No test sources or no compiled test classes — proceed without test bytecode.
             testScan = new ClassFileScanner.ScanResult(Set.of(), Map.of());
+            testRefsAvailable = false;
         }
 
         Map<String, String> classIndex = DependencyUsageAnalyzer.buildClassIndex(gaToJar);
@@ -338,7 +342,8 @@ public class DependenciesMojo extends AbstractMojo {
                         classIndex,
                         gaToJar,
                         declared,
-                        transitive);
+                        transitive,
+                        testRefsAvailable);
         applyUsageStatus(declared, transitive, usage);
 
         executeNonInteractive(proj, declared, transitive, gaToVersion, ancestorManagedGAs);

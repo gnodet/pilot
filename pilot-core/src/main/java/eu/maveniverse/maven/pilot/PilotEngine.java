@@ -148,6 +148,7 @@ public class PilotEngine {
             ClassFileScanner.ScanResult testScan = testClassesDir != null && Files.isDirectory(testClassesDir)
                     ? ClassFileScanner.scanDirectory(testClassesDir)
                     : new ClassFileScanner.ScanResult(Set.of(), Map.of());
+            boolean testRefsAvailable = testClassesDir != null && Files.isDirectory(testClassesDir);
             Map<String, String> classIndex = DependencyUsageAnalyzer.buildClassIndex(gaToJar);
             DependencyUsageAnalyzer.AnalysisResult usage = DependencyUsageAnalyzer.builder()
                     .build()
@@ -157,7 +158,8 @@ public class PilotEngine {
                             classIndex,
                             gaToJar,
                             declared,
-                            transitive);
+                            transitive,
+                            testRefsAvailable);
             for (var dep : declared) {
                 dep.usageStatus =
                         usage.declaredUsage().getOrDefault(dep.ga(), DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
@@ -244,6 +246,7 @@ public class PilotEngine {
         ClassFileScanner.ScanResult testScan = p.testOutputDirectory != null && Files.isDirectory(p.testOutputDirectory)
                 ? ClassFileScanner.scanDirectory(p.testOutputDirectory)
                 : new ClassFileScanner.ScanResult(Set.of(), Map.of());
+        boolean testRefsAvailable = p.testOutputDirectory != null && Files.isDirectory(p.testOutputDirectory);
         Map<String, String> classIndex = DependencyUsageAnalyzer.buildClassIndex(gaToJar);
         DependencyUsageAnalyzer.AnalysisResult usage = DependencyUsageAnalyzer.builder()
                 .build()
@@ -253,7 +256,8 @@ public class PilotEngine {
                         classIndex,
                         gaToJar,
                         declared,
-                        transitive);
+                        transitive,
+                        testRefsAvailable);
         populateDepDetails(declared, transitive, classIndex, gaToJar, mainScan, testScan);
 
         accumulateEntries(

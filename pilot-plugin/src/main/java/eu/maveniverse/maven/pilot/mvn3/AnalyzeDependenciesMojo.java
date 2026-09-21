@@ -159,7 +159,8 @@ public class AnalyzeDependenciesMojo extends AbstractMojo {
 
         Path testClassesDir = Path.of(proj.getBuild().getTestOutputDirectory());
         ClassFileScanner.ScanResult mainScan = ClassFileScanner.scanDirectory(classesDir);
-        ClassFileScanner.ScanResult testScan = Files.isDirectory(testClassesDir)
+        boolean testRefsAvailable = Files.isDirectory(testClassesDir);
+        ClassFileScanner.ScanResult testScan = testRefsAvailable
                 ? ClassFileScanner.scanDirectory(testClassesDir)
                 : new ClassFileScanner.ScanResult(Set.of(), Map.of());
 
@@ -167,7 +168,13 @@ public class AnalyzeDependenciesMojo extends AbstractMojo {
 
         DependencyUsageAnalyzer analyzer = buildAnalyzer();
         DependencyUsageAnalyzer.AnalysisResult usage = analyzer.analyze(
-                mainScan.referencedClasses(), testScan.referencedClasses(), classIndex, gaToJar, declared, transitive);
+                mainScan.referencedClasses(),
+                testScan.referencedClasses(),
+                classIndex,
+                gaToJar,
+                declared,
+                transitive,
+                testRefsAvailable);
 
         applyResults(proj, declared, transitive, usage, gaToVersion);
     }

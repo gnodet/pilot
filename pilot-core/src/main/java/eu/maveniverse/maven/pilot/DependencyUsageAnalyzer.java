@@ -183,7 +183,9 @@ public final class DependencyUsageAnalyzer {
      * @param mainRefs
      *            class names referenced from {@code target/classes}
      * @param testRefs
-     *            class names referenced from {@code target/test-classes}
+     *            class names referenced from {@code target/test-classes}; an empty set is valid when test analysis
+     *            was performed and found no references, but callers must also pass {@code testRefsAvailable=true}
+     *            to distinguish this from "test bytecode was not scanned at all"
      * @param classIndex
      *            class name to GA mapping (from {@link #buildClassIndex})
      * @param gaToJar
@@ -192,6 +194,13 @@ public final class DependencyUsageAnalyzer {
      *            declared dependency entries
      * @param transitive
      *            transitive dependency entries
+     * @param testRefsAvailable
+     *            {@code true} when {@code testRefs} was populated from an actual scan of
+     *            {@code target/test-classes}; {@code false} when test compilation was skipped or
+     *            {@code target/test-classes} was absent. When {@code false}, narrowable dependencies
+     *            with no main references are classified as {@code UNDETERMINED} rather than
+     *            {@code USED_IN_TEST} or {@code UNUSED}, because the absence of test references is
+     *            not evidence that the dep is unused — the test scan simply did not run.
      *
      * @return analysis result with usage status for each dependency
      */
@@ -201,7 +210,8 @@ public final class DependencyUsageAnalyzer {
             Map<String, String> classIndex,
             Map<String, File> gaToJar,
             List<DependenciesTui.DepEntry> declared,
-            List<DependenciesTui.DepEntry> transitive) {
+            List<DependenciesTui.DepEntry> transitive,
+            boolean testRefsAvailable) {
 
         // Build reverse index: GA -> set of class names provided by that artifact
         Map<String, Set<String>> gaToClasses = new HashMap<>();
@@ -215,12 +225,14 @@ public final class DependencyUsageAnalyzer {
 
         Map<String, UsageStatus> declaredUsage = new HashMap<>();
         for (var dep : declared) {
-            declaredUsage.put(dep.ga(), classify(dep, gaToClasses, gaToJar, mainRefs, testRefs, allRefs));
+            declaredUsage.put(
+                    dep.ga(), classify(dep, gaToClasses, gaToJar, mainRefs, testRefs, allRefs, testRefsAvailable));
         }
 
         Map<String, UsageStatus> transitiveUsage = new HashMap<>();
         for (var dep : transitive) {
-            transitiveUsage.put(dep.ga(), classify(dep, gaToClasses, gaToJar, mainRefs, testRefs, allRefs));
+            transitiveUsage.put(
+                    dep.ga(), classify(dep, gaToClasses, gaToJar, mainRefs, testRefs, allRefs, testRefsAvailable));
         }
 
         return new AnalysisResult(declaredUsage, transitiveUsage);
@@ -232,7 +244,8 @@ public final class DependencyUsageAnalyzer {
             Map<String, File> gaToJar,
             Set<String> mainRefs,
             Set<String> testRefs,
-            Set<String> allRefs) {
+            Set<String> allRefs,
+            boolean testRefsAvailable) {
 
         // Choose the appropriate reference set based on scope.
         // Maven 3 scopes: compile, provided, runtime, test, system.
@@ -259,18 +272,35 @@ public final class DependencyUsageAnalyzer {
             return UsageStatus.USED;
         }
 
-        // For compile-like scopes (compile, compile-only), check whether the dep is used exclusively
-        // in tests. If so, it should be narrowed to test scope rather than removed.
-        // This runs after the allowlists so that runtime/annotation-only deps are not mistakenly
-        // narrowed when their classes appear only in test bytecode.
-        // NOTE: "provided" and "runtime" scopes are intentionally excluded — see NARROWABLE_TO_TEST_SCOPES.
-        if (isNarrowableToTestScope(dep.scope) && depClasses != null && !Collections.disjoint(depClasses, testRefs)) {
-            return UsageStatus.USED_IN_TEST;
-        }
-
+        // Run runtime-discovery classification before the USED_IN_TEST check: a dep with
+        // ServiceLoader or DI registration metadata may have its classes referenced only in test
+        // bytecode (e.g. an SLF4J backend exercised by a test), but narrowing its scope to test
+        // would be wrong — the DI/SPI container loads it at runtime in production. UNDETERMINED
+        // is the safe return value in that case.
         UsageStatus discoveryStatus = classifyByRuntimeDiscovery(dep, gaToJar, refs);
         if (discoveryStatus != null) {
             return discoveryStatus;
+        }
+
+        // For compile-like scopes (compile, compile-only), check whether the dep is used exclusively
+        // in tests. If so, it should be narrowed to test scope rather than removed.
+        // This runs after the allowlists and after runtime-discovery so that runtime/annotation-only
+        // deps and SPI/DI-registered deps are not mistakenly narrowed when their classes appear only
+        // in test bytecode.
+        // NOTE: "provided" and "runtime" scopes are intentionally excluded — see NARROWABLE_TO_TEST_SCOPES.
+        // NOTE: Only classify USED_IN_TEST when test refs were actually scanned. When testRefsAvailable is
+        //       false (test compilation was skipped or target/test-classes was absent), the absence of test
+        //       references is not evidence of test-only usage — the scan simply did not run. In that case,
+        //       treat a narrowable dep with known classes and no main refs as UNDETERMINED.
+        if (isNarrowableToTestScope(dep.scope) && depClasses != null) {
+            if (testRefsAvailable) {
+                if (!Collections.disjoint(depClasses, testRefs)) {
+                    return UsageStatus.USED_IN_TEST;
+                }
+            } else {
+                // Test bytecode was not scanned — cannot distinguish test-only from genuinely unused.
+                return UsageStatus.UNDETERMINED;
+            }
         }
 
         // A JAR that contains public static final String/int/… fields (ConstantValue attribute)

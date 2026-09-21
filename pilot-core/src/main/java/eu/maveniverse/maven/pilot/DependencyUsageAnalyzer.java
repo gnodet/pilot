@@ -222,19 +222,25 @@ public final class DependencyUsageAnalyzer {
             return UsageStatus.USED;
         }
 
-        // For non-test scopes (e.g. compile), check whether the dep is used exclusively in tests.
-        // If so, it should be narrowed to test scope rather than removed.
-        if (!testScope && depClasses != null && !Collections.disjoint(depClasses, testRefs)) {
-            return UsageStatus.USED_IN_TEST;
-        }
-
         // Check explicit allowlists before runtime-discovery classification, so that a user-supplied
         // runtimeArtifacts or annotationOnlyArtifacts entry always wins and is never shadowed by the
         // UNDETERMINED result that classifyByRuntimeDiscovery returns for ServiceLoader-registered deps.
+        // This must also run before the USED_IN_TEST check: a dep in runtimeArtifacts or
+        // annotationOnlyArtifacts may have its classes referenced only in test bytecode (e.g. an
+        // annotation processor used from test code), and must be classified USED — not narrowed to
+        // test scope — to avoid removing it from the production runtime classpath.
         if (matchesArtifactPattern(dep.ga(), annotationOnlyArtifacts)
                 || matchesArtifactPattern(dep.ga(), runtimeArtifacts)
                 || matchesReflectionLoadedClasses(dep.ga(), depClasses)) {
             return UsageStatus.USED;
+        }
+
+        // For non-test scopes (e.g. compile), check whether the dep is used exclusively in tests.
+        // If so, it should be narrowed to test scope rather than removed.
+        // This runs after the allowlists so that runtime/annotation-only deps are not mistakenly
+        // narrowed when their classes appear only in test bytecode.
+        if (!testScope && depClasses != null && !Collections.disjoint(depClasses, testRefs)) {
+            return UsageStatus.USED_IN_TEST;
         }
 
         UsageStatus discoveryStatus = classifyByRuntimeDiscovery(dep, gaToJar, refs);

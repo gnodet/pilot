@@ -858,6 +858,33 @@ class DependencyUsageAnalyzerTest {
     }
 
     /**
+     * Regression guard: a dep in {@code runtimeArtifacts} whose classes appear only in test bytecode
+     * must be classified {@code USED}, not {@code USED_IN_TEST}.
+     * <p>
+     * Before the fix, the {@code USED_IN_TEST} check ran before the {@code runtimeArtifacts} allowlist.
+     * A compile-scope JDBC driver listed in {@code runtimeArtifacts} but referenced only from test code
+     * would be classified {@code USED_IN_TEST} and its scope narrowed to {@code test}, removing it from
+     * the production runtime classpath and breaking the application at startup.
+     */
+    @Test
+    void runtimeArtifactsAllowlistWinsOverUsedInTest() {
+        var dep = new DependenciesTui.DepEntry("org.postgresql", "postgresql", "", "42.7.3", "compile", true);
+
+        // postgresql class appears only in test refs (e.g. test exercises the production DB path)
+        Map<String, String> classIndex = Map.of("org.postgresql.Driver", "org.postgresql:postgresql");
+        Map<String, File> gaToJar = Map.of();
+
+        var result = DependencyUsageAnalyzer.builder()
+                .runtimeArtifacts(Set.of("org.postgresql:postgresql"))
+                .build()
+                .analyze(Set.of(), Set.of("org.postgresql.Driver"), classIndex, gaToJar, List.of(dep), List.of());
+
+        // runtimeArtifacts allowlist must win: USED, not USED_IN_TEST
+        assertThat(result.declaredUsage().get("org.postgresql:postgresql"))
+                .isEqualTo(DependencyUsageAnalyzer.UsageStatus.USED);
+    }
+
+    /**
      * Regression test: a dependency whose JAR contains {@code public static final} fields
      * (compile-time constants with a {@code ConstantValue} attribute) must be classified as
      * {@code UNDETERMINED}, not {@code UNUSED}, even when no bytecode reference to its classes

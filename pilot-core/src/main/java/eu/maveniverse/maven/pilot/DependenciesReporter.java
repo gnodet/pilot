@@ -220,9 +220,11 @@ public final class DependenciesReporter {
                     .flatMap(depsEl -> depsEl.childElements("dependency")
                             .filter(coords.predicateGA())
                             .findFirst())
-                    .ifPresent(depEl -> editor.updateOrCreateChildElement(depEl, "scope", "test"));
+                    .ifPresent(depEl -> {
+                        editor.updateOrCreateChildElement(depEl, "scope", "test");
+                        logger.log("Narrowed to test scope (used only in tests): " + dep.ga());
+                    });
             pomContent = editor.toXml();
-            logger.log("Narrowed to test scope (used only in tests): " + dep.ga());
         }
 
         for (var dep : usedTransitive) {

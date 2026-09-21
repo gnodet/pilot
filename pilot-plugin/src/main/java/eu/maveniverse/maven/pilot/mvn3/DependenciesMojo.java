@@ -508,6 +508,7 @@ public class DependenciesMojo extends AbstractMojo {
         Set<String> ignoredTransitive = buildIgnoreSet(ignoredUsedTransitive);
         unusedDeclared.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredUnused));
         usedTransitive.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredTransitive));
+        testScopedDeclared.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredUnused));
 
         // showUndetermined is opt-in; failOnUndetermined implies showing them
         List<DependenciesTui.DepEntry> visibleUndetermined =

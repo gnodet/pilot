@@ -216,6 +216,7 @@ public class AnalyzeDependenciesMojo extends AbstractMojo {
         Set<String> ignoredTransitive = buildIgnoreSet(ignoredUsedTransitive);
         unusedDeclared.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredUnused));
         usedTransitive.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredTransitive));
+        testScopedDeclared.removeIf(dep -> DependencyUsageAnalyzer.matchesArtifactPattern(dep.ga(), ignoredUnused));
 
         if (unusedDeclared.isEmpty() && testScopedDeclared.isEmpty() && usedTransitive.isEmpty()) {
             getLog().info("No dependency issues found.");

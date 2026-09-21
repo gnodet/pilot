@@ -109,19 +109,24 @@ public class DependenciesMojo extends AbstractMojo {
     @Parameter(property = "pilot.skipTestScope", defaultValue = "false")
     boolean skipTestScope = false;
 
-    @Parameter
+    @Parameter(property = "pilot.runtimeArtifacts")
     private List<String> runtimeArtifacts;
 
-    @Parameter
+    @Parameter(property = "pilot.annotationOnlyArtifacts")
     private List<String> annotationOnlyArtifacts;
 
-    @Parameter
+    /**
+     * Map of artifact {@code groupId:artifactId} to comma-separated class names that are
+     * loaded reflectively at runtime. Maven cannot bind a {@code Map<String,String>} field
+     * from a {@code -D} system property; use POM {@code <configuration>} instead.
+     */
+    @Parameter(property = "pilot.reflectionLoadedClasses")
     private Map<String, String> reflectionLoadedClasses;
 
-    @Parameter
+    @Parameter(property = "pilot.ignoredUnusedDeclared")
     private List<String> ignoredUnusedDeclared;
 
-    @Parameter
+    @Parameter(property = "pilot.ignoredUsedTransitive")
     private List<String> ignoredUsedTransitive;
 
     /**
@@ -139,7 +144,7 @@ public class DependenciesMojo extends AbstractMojo {
      *
      * @since 0.4.0
      */
-    @Parameter
+    @Parameter(property = "pilot.knownUsed")
     private List<String> knownUsed;
 
     /**
@@ -157,7 +162,7 @@ public class DependenciesMojo extends AbstractMojo {
      *
      * @since 0.4.0
      */
-    @Parameter
+    @Parameter(property = "pilot.knownUnused")
     private List<String> knownUnused;
 
     /**

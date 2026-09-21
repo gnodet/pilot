@@ -173,18 +173,19 @@ class DependencyUsageAnalyzerTest {
     }
 
     @Test
-    void compileScopedDepNotCheckedAgainstTestRefs() {
+    void compileScopedDepUsedOnlyInTestsClassifiedAsUsedInTest() {
         var dep = new DependenciesTui.DepEntry("com.example", "lib", "", "1.0", "compile", true);
 
         Map<String, String> classIndex = Map.of("com.example.Foo", "com.example:lib");
         Map<String, File> gaToJar = Map.of();
 
-        // Only in test refs, not main refs — compile-scoped dep should be UNUSED
+        // Only in test refs, not main refs — compile-scoped dep should be USED_IN_TEST (scope narrowing)
         var result = DependencyUsageAnalyzer.builder()
                 .build()
                 .analyze(Set.of(), Set.of("com.example.Foo"), classIndex, gaToJar, List.of(dep), List.of());
 
-        assertThat(result.declaredUsage()).containsEntry("com.example:lib", DependencyUsageAnalyzer.UsageStatus.UNUSED);
+        assertThat(result.declaredUsage())
+                .containsEntry("com.example:lib", DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST);
     }
 
     @Test

@@ -92,6 +92,12 @@ public final class DependencyUsageAnalyzer {
 
     public enum UsageStatus {
         USED,
+        /**
+         * The dependency's classes are referenced only from test sources (target/test-classes),
+         * not from main sources (target/classes). For compile-scope dependencies, this means
+         * the scope should be narrowed to {@code test} rather than removed.
+         */
+        USED_IN_TEST,
         UNUSED,
         UNDETERMINED
     }
@@ -185,12 +191,12 @@ public final class DependencyUsageAnalyzer {
 
         Map<String, UsageStatus> declaredUsage = new HashMap<>();
         for (var dep : declared) {
-            declaredUsage.put(dep.ga(), classify(dep, gaToClasses, gaToJar, mainRefs, allRefs));
+            declaredUsage.put(dep.ga(), classify(dep, gaToClasses, gaToJar, mainRefs, testRefs, allRefs));
         }
 
         Map<String, UsageStatus> transitiveUsage = new HashMap<>();
         for (var dep : transitive) {
-            transitiveUsage.put(dep.ga(), classify(dep, gaToClasses, gaToJar, mainRefs, allRefs));
+            transitiveUsage.put(dep.ga(), classify(dep, gaToClasses, gaToJar, mainRefs, testRefs, allRefs));
         }
 
         return new AnalysisResult(declaredUsage, transitiveUsage);
@@ -201,17 +207,25 @@ public final class DependencyUsageAnalyzer {
             Map<String, Set<String>> gaToClasses,
             Map<String, File> gaToJar,
             Set<String> mainRefs,
+            Set<String> testRefs,
             Set<String> allRefs) {
 
         // Choose the appropriate reference set based on scope.
         // Maven 3 scopes: compile, provided, runtime, test, system.
         // Maven 4.1.0+ adds: compile-only, test-only, test-runtime.
         // Test-related scopes are checked against allRefs (main + test); others against mainRefs only.
-        Set<String> refs = isTestScope(dep.scope) ? allRefs : mainRefs;
+        boolean testScope = isTestScope(dep.scope);
+        Set<String> refs = testScope ? allRefs : mainRefs;
 
         Set<String> depClasses = gaToClasses.get(dep.ga());
         if (depClasses != null && !Collections.disjoint(depClasses, refs)) {
             return UsageStatus.USED;
+        }
+
+        // For non-test scopes (e.g. compile), check whether the dep is used exclusively in tests.
+        // If so, it should be narrowed to test scope rather than removed.
+        if (!testScope && depClasses != null && !Collections.disjoint(depClasses, testRefs)) {
+            return UsageStatus.USED_IN_TEST;
         }
 
         // Check explicit allowlists before runtime-discovery classification, so that a user-supplied

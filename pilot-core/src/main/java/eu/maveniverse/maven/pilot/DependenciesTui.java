@@ -1709,6 +1709,7 @@ public class DependenciesTui extends ToolPanel {
             Color usageColor =
                     switch (dep.usageStatus) {
                         case USED -> dep.declared ? theme.usageUsedColor() : theme.usageIssueColor();
+                        case USED_IN_TEST -> dep.declared ? theme.usageUndeterminedColor() : theme.usageIssueColor();
                         case UNUSED -> dep.declared ? theme.usageIssueColor() : theme.usageUsedColor();
                         case UNDETERMINED -> theme.usageUndeterminedColor();
                     };

@@ -797,6 +797,105 @@ class DependencyUsageAnalyzerTest {
                 .containsEntry("com.example:svc", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
     }
 
+    // --- Apache Camel SPI provider false-positive reproducer ---
+
+    /**
+     * Camel components/languages/data-formats register themselves via
+     * {@code META-INF/services/org/apache/camel/} entries (e.g.
+     * {@code META-INF/services/org/apache/camel/component/timer},
+     * {@code META-INF/services/org/apache/camel/language.properties}).
+     * Camel's {@code FactoryFinder} / {@code PluginHelper} resolves them at runtime
+     * without any direct class reference in the consuming module.
+     * A missing Camel SPI dep would cause a runtime {@code NoSuchBeanDefinitionException}
+     * or similar, not a compile error — so pilot must never flag them as UNUSED.
+     */
+    @Test
+    void camelSpiComponentIsUndetermined(@TempDir Path tempDir) throws Exception {
+        // Simulate camel-timer: registers META-INF/services/org/apache/camel/component/timer
+        // and META-INF/services/org/apache/camel/component.properties
+        Path camelTimerJar = tempDir.resolve("camel-timer.jar");
+        createJarWithEntries(
+                camelTimerJar,
+                "META-INF/services/org/apache/camel/component/timer",
+                "META-INF/services/org/apache/camel/component.properties");
+
+        var dep = new DependenciesTui.DepEntry("org.apache.camel", "camel-timer", "", "4.0.0", "test", true);
+        Map<String, File> gaToJar = Map.of("org.apache.camel:camel-timer", camelTimerJar.toFile());
+        // Consumer (e.g. camel-core test class) uses "timer" as a URI string literal — no class ref
+        Map<String, String> classIndex =
+                Map.of("org.apache.camel.component.timer.TimerComponent", "org.apache.camel:camel-timer");
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(
+                        Set.of("org.apache.camel.builder.RouteBuilder"),
+                        Set.of(),
+                        classIndex,
+                        gaToJar,
+                        List.of(dep),
+                        List.of(),
+                        true);
+
+        assertThat(result.declaredUsage())
+                .containsEntry("org.apache.camel:camel-timer", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
+    @Test
+    void camelSpiLanguageIsUndetermined(@TempDir Path tempDir) throws Exception {
+        // Simulate camel-xpath: registers META-INF/services/org/apache/camel/language/xpath
+        Path camelXpathJar = tempDir.resolve("camel-xpath.jar");
+        createJarWithEntries(
+                camelXpathJar,
+                "META-INF/services/org/apache/camel/language/xpath",
+                "META-INF/services/org/apache/camel/language.properties");
+
+        var dep = new DependenciesTui.DepEntry("org.apache.camel", "camel-xpath", "", "4.0.0", "test", true);
+        Map<String, File> gaToJar = Map.of("org.apache.camel:camel-xpath", camelXpathJar.toFile());
+        Map<String, String> classIndex =
+                Map.of("org.apache.camel.language.xpath.XPathBuilder", "org.apache.camel:camel-xpath");
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(
+                        Set.of("org.apache.camel.model.language.XPathExpression"),
+                        Set.of(),
+                        classIndex,
+                        gaToJar,
+                        List.of(dep),
+                        List.of(),
+                        true);
+
+        assertThat(result.declaredUsage())
+                .containsEntry("org.apache.camel:camel-xpath", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
+    @Test
+    void camelSpiNamedExtensionIsUndetermined(@TempDir Path tempDir) throws Exception {
+        // Simulate camel-yaml-io: registers META-INF/services/org/apache/camel/modelyaml-dumper
+        // (a named singleton SPI, not a component/language)
+        Path camelYamlIoJar = tempDir.resolve("camel-yaml-io.jar");
+        createJarWithEntries(camelYamlIoJar, "META-INF/services/org/apache/camel/modelyaml-dumper");
+
+        var dep = new DependenciesTui.DepEntry("org.apache.camel", "camel-yaml-io", "", "4.0.0", "test", true);
+        Map<String, File> gaToJar = Map.of("org.apache.camel:camel-yaml-io", camelYamlIoJar.toFile());
+        Map<String, String> classIndex =
+                Map.of("org.apache.camel.yaml.LwModelToYAMLDumper", "org.apache.camel:camel-yaml-io");
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(
+                        Set.of("org.apache.camel.support.PluginHelper"),
+                        Set.of(),
+                        classIndex,
+                        gaToJar,
+                        List.of(dep),
+                        List.of(),
+                        true);
+
+        assertThat(result.declaredUsage())
+                .containsEntry("org.apache.camel:camel-yaml-io", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
     // --- SLF4J binding / logging backend false-positive reproducer ---
 
     /**

@@ -58,6 +58,16 @@ public final class DependencyUsageAnalyzer {
     private static final String META_INF_SERVICES = "META-INF/services/";
     private static final String META_INF_SISU = "META-INF/sisu/";
     private static final String META_INF_MAVEN_DI = "META-INF/maven/";
+    private static final String META_INF_CAMEL_SERVICES = "META-INF/services/org/apache/camel/";
+    /**
+     * Sentinel class name added to {@code discoveryClasses} when a JAR registers itself as a
+     * Camel SPI provider. It is never present in consumer bytecode, so
+     * {@link #classifyByRuntimeDiscovery} will fall through to {@code UNDETERMINED} rather than
+     * {@code USED} — which is the correct result: Camel's {@code FactoryFinder} / {@code PluginHelper}
+     * discovers these providers at runtime without any direct class reference in the consumer.
+     */
+    private static final String CAMEL_SPI_SENTINEL = "org.apache.camel.spi.CamelSpiProvider";
+
     private static final Set<String> TEST_SCOPES = Set.of("test", "test-only", "test-runtime");
 
     /**
@@ -427,6 +437,8 @@ public final class DependencyUsageAnalyzer {
                 } else if (isMavenDiEntry(name)) {
                     classes.add(name.substring(META_INF_MAVEN_DI.length()));
                     hasMavenDiOrSisu = true;
+                } else if (isCamelSpiEntry(name)) {
+                    classes.add(CAMEL_SPI_SENTINEL);
                 } else {
                     addIfServiceEntry(name, META_INF_SERVICES, classes);
                 }
@@ -472,6 +484,25 @@ public final class DependencyUsageAnalyzer {
         }
         String remainder = name.substring(META_INF_SISU.length());
         return !remainder.contains("/") && !remainder.isEmpty();
+    }
+
+    /**
+     * Returns {@code true} for a Camel SPI registration entry under
+     * {@code META-INF/services/org/apache/camel/}.
+     *
+     * <p>Apache Camel registers components, languages, data formats and other extension points
+     * via files under this path (e.g. {@code META-INF/services/org/apache/camel/component/timer},
+     * {@code META-INF/services/org/apache/camel/language.properties},
+     * {@code META-INF/services/org/apache/camel/modelyaml-dumper}).
+     * These are resolved at runtime by Camel's {@code FactoryFinder} / {@code PluginHelper}
+     * without any direct class reference in the consuming module.</p>
+     *
+     * <p>Directory entries (trailing {@code /}) are excluded.</p>
+     */
+    private static boolean isCamelSpiEntry(String name) {
+        return name.startsWith(META_INF_CAMEL_SERVICES)
+                && !name.endsWith("/")
+                && name.length() > META_INF_CAMEL_SERVICES.length();
     }
 
     private boolean matchesReflectionLoadedClasses(String ga, Set<String> depClasses) {

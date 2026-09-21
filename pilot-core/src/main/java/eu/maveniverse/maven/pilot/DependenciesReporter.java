@@ -220,13 +220,7 @@ public final class DependenciesReporter {
                     .flatMap(depsEl -> depsEl.childElements("dependency")
                             .filter(coords.predicateGA())
                             .findFirst())
-                    .ifPresent(depEl -> {
-                        try {
-                            editor.updateOrCreateChildElement(depEl, "scope", "test");
-                        } catch (Exception e) {
-                            throw new RuntimeException("Failed to narrow scope for " + dep.ga(), e);
-                        }
-                    });
+                    .ifPresent(depEl -> editor.updateOrCreateChildElement(depEl, "scope", "test"));
             pomContent = editor.toXml();
             logger.log("Narrowed to test scope (used only in tests): " + dep.ga());
         }

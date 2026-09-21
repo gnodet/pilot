@@ -73,10 +73,10 @@ public class DependenciesTui extends ToolPanel {
             List.of(COMPILE_SCOPE, "compile-only", "provided", "runtime", "test", "test-only", "test-runtime");
 
     public static class DepEntry {
-        final String groupId;
-        final String artifactId;
-        final String classifier;
-        final String version;
+        public final String groupId;
+        public final String artifactId;
+        public final String classifier;
+        public final String version;
         public String scope;
         final boolean declared;
         /**
@@ -1702,6 +1702,10 @@ public class DependenciesTui extends ToolPanel {
                 usageText = dep.declared
                         ? "Directly referenced" + classInfo
                         : "Directly referenced" + classInfo + " — should be declared";
+            } else if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST) {
+                usageText = dep.declared
+                        ? "Only referenced from tests — scope should be narrowed to test"
+                        : "Only referenced from tests — should be declared with test scope";
             } else {
                 usageText =
                         dep.declared ? "Not directly referenced (may be safe to remove)" : "Not directly referenced";

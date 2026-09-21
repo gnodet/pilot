@@ -487,8 +487,10 @@ public class DependenciesMojo extends AbstractMojo {
         // Transitive deps used only in tests should be promoted at test scope.
         for (var dep : transitive) {
             if (dep.usageStatus == DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST) {
-                dep.scope = "test";
-                usedTransitive.add(dep);
+                var testDep = new DependenciesTui.DepEntry(
+                        dep.groupId, dep.artifactId, dep.classifier, dep.version, "test", false);
+                testDep.usageStatus = dep.usageStatus;
+                usedTransitive.add(testDep);
             }
         }
 

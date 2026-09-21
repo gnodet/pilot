@@ -470,9 +470,10 @@ class DependenciesReporterTest {
         DependenciesReporter.fix(pomPath, List.of(), List.of(testOnly), List.of(), Map.of(), Set.of(), logs::add);
 
         String result = Files.readString(pomPath);
-        assertThat(result).contains("compile-but-test-only");
-        assertThat(result).contains("<scope>test</scope>");
-        assertThat(result).contains("kept-as-is");
+        assertThat(result)
+                .contains("compile-but-test-only")
+                .contains("<scope>test</scope>")
+                .contains("kept-as-is");
         assertThat(logs).anyMatch(l -> l.contains("Narrowed to test scope") && l.contains("compile-but-test-only"));
     }
 
@@ -511,12 +512,14 @@ class DependenciesReporterTest {
                 logs::add);
 
         String result = Files.readString(pomPath);
-        assertThat(result).doesNotContain("unused");
-        assertThat(result).contains("test-only").contains("<scope>test</scope>");
-        assertThat(result).contains("org.needed").contains("lib");
-        assertThat(logs).anyMatch(l -> l.contains("Removed unused dependency: com.example:unused"));
-        assertThat(logs).anyMatch(l -> l.contains("Narrowed to test scope") && l.contains("test-only"));
-        assertThat(logs).anyMatch(l -> l.contains("Added used transitive dependency: org.needed:lib"));
+        assertThat(result)
+                .doesNotContain("unused")
+                .satisfies(r -> assertThat(r).contains("test-only").contains("<scope>test</scope>"))
+                .satisfies(r -> assertThat(r).contains("org.needed").contains("lib"));
+        assertThat(logs)
+                .anyMatch(l -> l.contains("Removed unused dependency: com.example:unused"))
+                .anyMatch(l -> l.contains("Narrowed to test scope") && l.contains("test-only"))
+                .anyMatch(l -> l.contains("Added used transitive dependency: org.needed:lib"));
     }
 
     @Test

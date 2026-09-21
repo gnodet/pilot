@@ -395,6 +395,130 @@ class DependenciesReporterTest {
         assertThat(result).contains("unmanaged-lib").contains("4.0");
     }
 
+    // -- testScopedDeclared (USED_IN_TEST) --
+
+    @Test
+    void formatFindingsTestScopedDeclaredSection() {
+        var dep = new DependenciesTui.DepEntry("com.example", "compile-but-test-only", "", "1.0", "compile", true);
+
+        String output = DependenciesReporter.formatFindings(List.of(), List.of(dep), List.of(), List.of());
+
+        assertThat(output)
+                .contains("used only in tests")
+                .contains("narrowed to test")
+                .contains("com.example:compile-but-test-only")
+                .doesNotContain("Unused declared")
+                .doesNotContain("Used transitive");
+    }
+
+    @Test
+    void formatFindingsAllFourSections() {
+        var unused = new DependenciesTui.DepEntry("com.example", "unused", "", "1.0", "compile", true);
+        var testOnly = new DependenciesTui.DepEntry("com.example", "test-only", "", "1.0", "compile", true);
+        var transitive = new DependenciesTui.DepEntry("com.transitive", "needed", "", "2.0", "runtime", false);
+        var undetermined = new DependenciesTui.DepEntry("com.example", "mystery", "", "3.0", "compile", true);
+
+        String output = DependenciesReporter.formatFindings(
+                List.of(unused), List.of(testOnly), List.of(transitive), List.of(undetermined));
+
+        assertThat(output)
+                .contains("Unused declared dependency")
+                .contains("com.example:unused")
+                .contains("used only in tests")
+                .contains("com.example:test-only")
+                .contains("Used transitive dependency")
+                .contains("com.transitive:needed (runtime)")
+                .contains("Undetermined dependency")
+                .contains("com.example:mystery");
+    }
+
+    @Test
+    void formatCheckFailureWithTestScopedDeclared() {
+        var dep = new DependenciesTui.DepEntry("com.example", "test-only", "", "1.0", "compile", true);
+
+        String msg = DependenciesReporter.formatCheckFailure(List.of(), List.of(dep), List.of(), List.of());
+
+        assertThat(msg)
+                .contains("used only in tests")
+                .contains("com.example:test-only")
+                .contains("-Dpilot.action=fix");
+    }
+
+    @Test
+    void fixNarrowsTestOnlyDepToTestScope(@TempDir Path tempDir) throws Exception {
+        Path pomPath = tempDir.resolve("pom.xml");
+        Files.writeString(pomPath, """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>com.example</groupId>
+                      <artifactId>compile-but-test-only</artifactId>
+                      <version>1.0</version>
+                    </dependency>
+                    <dependency>
+                      <groupId>com.example</groupId>
+                      <artifactId>kept-as-is</artifactId>
+                      <version>2.0</version>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """);
+
+        var testOnly = new DependenciesTui.DepEntry("com.example", "compile-but-test-only", "", "1.0", "compile", true);
+        List<String> logs = new ArrayList<>();
+
+        DependenciesReporter.fix(pomPath, List.of(), List.of(testOnly), List.of(), Map.of(), Set.of(), logs::add);
+
+        String result = Files.readString(pomPath);
+        assertThat(result).contains("compile-but-test-only");
+        assertThat(result).contains("<scope>test</scope>");
+        assertThat(result).contains("kept-as-is");
+        assertThat(logs).anyMatch(l -> l.contains("Narrowed to test scope") && l.contains("compile-but-test-only"));
+    }
+
+    @Test
+    void fixCombinesAllThreeActions(@TempDir Path tempDir) throws Exception {
+        Path pomPath = tempDir.resolve("pom.xml");
+        Files.writeString(pomPath, """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>com.example</groupId>
+                      <artifactId>unused</artifactId>
+                      <version>1.0</version>
+                    </dependency>
+                    <dependency>
+                      <groupId>com.example</groupId>
+                      <artifactId>test-only</artifactId>
+                      <version>2.0</version>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """);
+
+        var unused = new DependenciesTui.DepEntry("com.example", "unused", "", "1.0", "compile", true);
+        var testOnly = new DependenciesTui.DepEntry("com.example", "test-only", "", "2.0", "compile", true);
+        var transitive = new DependenciesTui.DepEntry("org.needed", "lib", "", "3.0", "compile", false);
+        List<String> logs = new ArrayList<>();
+
+        DependenciesReporter.fix(
+                pomPath,
+                List.of(unused),
+                List.of(testOnly),
+                List.of(transitive),
+                Map.of("org.needed:lib", "3.0"),
+                Set.of(),
+                logs::add);
+
+        String result = Files.readString(pomPath);
+        assertThat(result).doesNotContain("unused");
+        assertThat(result).contains("test-only").contains("<scope>test</scope>");
+        assertThat(result).contains("org.needed").contains("lib");
+        assertThat(logs).anyMatch(l -> l.contains("Removed unused dependency: com.example:unused"));
+        assertThat(logs).anyMatch(l -> l.contains("Narrowed to test scope") && l.contains("test-only"));
+        assertThat(logs).anyMatch(l -> l.contains("Added used transitive dependency: org.needed:lib"));
+    }
+
     @Test
     void fixAncestorManagedNoDependenciesSection(@TempDir Path tempDir) throws Exception {
         // Tests the case where the POM has no <dependencies> section yet

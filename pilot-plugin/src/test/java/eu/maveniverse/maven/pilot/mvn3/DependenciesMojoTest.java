@@ -849,6 +849,86 @@ class DependenciesMojoTest {
         assertThat(log.warnings()).isEmpty();
     }
 
+    @Test
+    void check_usedInTest_declaredCompile_escalatesToFailure(@TempDir Path tmp) throws Exception {
+        // A compile-scope dep used only in tests (USED_IN_TEST) should trigger a check failure
+        // asking the user to narrow its scope — not silently pass.
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+
+        var dep = depWithStatus(
+                "com.example",
+                "compile-but-test-only",
+                "compile",
+                true,
+                DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST);
+        MavenProject proj = tempProject(tmp);
+
+        assertThatThrownBy(() -> mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of()))
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("com.example:compile-but-test-only")
+                .hasMessageContaining("narrowed to test");
+    }
+
+    @Test
+    void report_usedInTest_declaredCompile_producesWarning(@TempDir Path tmp) throws Exception {
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "report");
+
+        var dep = depWithStatus(
+                "com.example",
+                "compile-but-test-only",
+                "compile",
+                true,
+                DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST);
+        MavenProject proj = tempProject(tmp);
+
+        var log = new RecordingLog();
+        mojo.setLog(log);
+        mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of());
+        assertThat(log.warnings())
+                .anyMatch(w -> w.contains("narrowed to test") && w.contains("com.example:compile-but-test-only"));
+    }
+
+    @Test
+    void check_usedInTest_inheritedCompile_notReported(@TempDir Path tmp) throws Exception {
+        // USED_IN_TEST on an inherited dep (ownDeclared=false) must not trigger a check failure.
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+
+        var dep = depWithStatus(
+                "com.parent",
+                "compile-but-test-only",
+                "compile",
+                true,
+                DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST);
+        dep.ownDeclared = false;
+        MavenProject proj = tempProject(tmp);
+
+        // Should not throw — inherited deps are excluded
+        mojo.executeNonInteractive(proj, List.of(dep), List.of(), Map.of());
+    }
+
+    @Test
+    void check_usedInTest_transitive_escalatesToFailure(@TempDir Path tmp) throws Exception {
+        // A transitive dep classified as USED_IN_TEST should be promoted at test scope → appears
+        // in usedTransitive list → triggers check failure (used transitive = undeclared direct dep).
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "check");
+
+        var dep = depWithStatus(
+                "com.example",
+                "test-only-transitive",
+                "compile",
+                false,
+                DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST);
+        MavenProject proj = tempProject(tmp);
+
+        assertThatThrownBy(() -> mojo.executeNonInteractive(proj, List.of(), List.of(dep), Map.of()))
+                .isInstanceOf(MojoFailureException.class)
+                .hasMessageContaining("com.example:test-only-transitive");
+    }
+
     /** Minimal Maven Log implementation that captures warning messages for assertion. */
     private static class RecordingLog implements Log {
         private final List<String> warnings = new ArrayList<>();

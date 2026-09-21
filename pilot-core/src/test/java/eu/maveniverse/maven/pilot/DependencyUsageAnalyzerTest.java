@@ -958,4 +958,79 @@ class DependencyUsageAnalyzerTest {
         assertThat(DependencyUsageAnalyzer.isTestScope(null)).isFalse();
         assertThat(DependencyUsageAnalyzer.isTestScope("")).isFalse();
     }
+
+    // --- isNarrowableToTestScope ---
+
+    @Test
+    void isNarrowableToTestScopeReturnsTrueOnlyForCompileScopes() {
+        assertThat(DependencyUsageAnalyzer.isNarrowableToTestScope("compile")).isTrue();
+        assertThat(DependencyUsageAnalyzer.isNarrowableToTestScope("compile-only"))
+                .isTrue();
+        // "provided" must NOT be narrowable: container supplies it at runtime
+        assertThat(DependencyUsageAnalyzer.isNarrowableToTestScope("provided")).isFalse();
+        // "runtime" must NOT be narrowable: test-only refs don't mean absent from production
+        assertThat(DependencyUsageAnalyzer.isNarrowableToTestScope("runtime")).isFalse();
+        assertThat(DependencyUsageAnalyzer.isNarrowableToTestScope("system")).isFalse();
+        assertThat(DependencyUsageAnalyzer.isNarrowableToTestScope("test")).isFalse();
+        assertThat(DependencyUsageAnalyzer.isNarrowableToTestScope(null)).isFalse();
+        assertThat(DependencyUsageAnalyzer.isNarrowableToTestScope("")).isFalse();
+    }
+
+    /**
+     * Regression guard: a {@code provided}-scope dependency whose classes appear only in test
+     * bytecode must NOT be classified {@code USED_IN_TEST}. Narrowing {@code provided} to
+     * {@code test} would remove a container-provided artifact from the production runtime
+     * classpath, breaking the application at startup.
+     */
+    @Test
+    void providedScopedDepIsNotNarrowedToTestEvenWhenOnlyInTestRefs() {
+        var dep = new DependenciesTui.DepEntry("javax.servlet", "javax.servlet-api", "", "4.0.1", "provided", true);
+
+        Map<String, String> classIndex =
+                Map.of("javax.servlet.http.HttpServletRequest", "javax.servlet:javax.servlet-api");
+        Map<String, File> gaToJar = Map.of();
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(
+                        Set.of(), // mainRefs — not in main bytecode
+                        Set.of("javax.servlet.http.HttpServletRequest"), // testRefs — only in tests
+                        classIndex,
+                        gaToJar,
+                        List.of(dep),
+                        List.of());
+
+        // provided dep must not be narrowed to test — it's UNUSED (or UNDETERMINED), not USED_IN_TEST
+        assertThat(result.declaredUsage().get("javax.servlet:javax.servlet-api"))
+                .as("provided-scope dep used only in tests must not be classified USED_IN_TEST")
+                .isNotEqualTo(DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST);
+    }
+
+    /**
+     * Regression guard: a {@code runtime}-scope dependency whose classes appear only in test
+     * bytecode must NOT be classified {@code USED_IN_TEST}. Narrowing {@code runtime} to
+     * {@code test} could remove a JDBC driver or SLF4J backend from the production classpath.
+     */
+    @Test
+    void runtimeScopedDepIsNotNarrowedToTestEvenWhenOnlyInTestRefs() {
+        var dep = new DependenciesTui.DepEntry("org.slf4j", "slf4j-simple", "", "2.0.9", "runtime", true);
+
+        Map<String, String> classIndex = Map.of("org.slf4j.simple.SimpleLogger", "org.slf4j:slf4j-simple");
+        Map<String, File> gaToJar = Map.of();
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(
+                        Set.of(), // mainRefs — not in main bytecode
+                        Set.of("org.slf4j.simple.SimpleLogger"), // testRefs — only in tests
+                        classIndex,
+                        gaToJar,
+                        List.of(dep),
+                        List.of());
+
+        // runtime dep must not be narrowed to test
+        assertThat(result.declaredUsage().get("org.slf4j:slf4j-simple"))
+                .as("runtime-scope dep used only in tests must not be classified USED_IN_TEST")
+                .isNotEqualTo(DependencyUsageAnalyzer.UsageStatus.USED_IN_TEST);
+    }
 }

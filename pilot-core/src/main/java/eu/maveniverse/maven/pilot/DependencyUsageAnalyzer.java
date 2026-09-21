@@ -61,6 +61,19 @@ public final class DependencyUsageAnalyzer {
     private static final Set<String> TEST_SCOPES = Set.of("test", "test-only", "test-runtime");
 
     /**
+     * Scopes that can be narrowed to {@code test} when a dependency's classes are used only in tests.
+     *
+     * <p>Only {@code compile} and {@code compile-only} are eligible:
+     * <ul>
+     * <li>{@code provided} — the container supplies the artifact at runtime; narrowing to {@code test}
+     *     would silently remove it from the production runtime classpath.</li>
+     * <li>{@code runtime} — the artifact is loaded at runtime without bytecode references from main
+     *     sources; test-only class references do not justify narrowing it to {@code test} scope.</li>
+     * </ul>
+     */
+    private static final Set<String> NARROWABLE_TO_TEST_SCOPES = Set.of("compile", "compile-only");
+
+    /**
      * Returns {@code true} if the given Maven scope is test-only
      * ({@code test}, {@code test-only}, or {@code test-runtime}).
      *
@@ -70,6 +83,17 @@ public final class DependencyUsageAnalyzer {
      */
     public static boolean isTestScope(String scope) {
         return scope != null && TEST_SCOPES.contains(scope);
+    }
+
+    /**
+     * Returns {@code true} if the given Maven scope can be narrowed to {@code test} when the
+     * dependency's classes are used only in test bytecode.
+     *
+     * <p>Only {@code compile} and {@code compile-only} are narrowable; {@code provided} and
+     * {@code runtime} must remain on their original scope to preserve runtime correctness.</p>
+     */
+    public static boolean isNarrowableToTestScope(String scope) {
+        return scope != null && NARROWABLE_TO_TEST_SCOPES.contains(scope);
     }
 
     /**
@@ -235,11 +259,12 @@ public final class DependencyUsageAnalyzer {
             return UsageStatus.USED;
         }
 
-        // For non-test scopes (e.g. compile), check whether the dep is used exclusively in tests.
-        // If so, it should be narrowed to test scope rather than removed.
+        // For compile-like scopes (compile, compile-only), check whether the dep is used exclusively
+        // in tests. If so, it should be narrowed to test scope rather than removed.
         // This runs after the allowlists so that runtime/annotation-only deps are not mistakenly
         // narrowed when their classes appear only in test bytecode.
-        if (!testScope && depClasses != null && !Collections.disjoint(depClasses, testRefs)) {
+        // NOTE: "provided" and "runtime" scopes are intentionally excluded — see NARROWABLE_TO_TEST_SCOPES.
+        if (isNarrowableToTestScope(dep.scope) && depClasses != null && !Collections.disjoint(depClasses, testRefs)) {
             return UsageStatus.USED_IN_TEST;
         }
 

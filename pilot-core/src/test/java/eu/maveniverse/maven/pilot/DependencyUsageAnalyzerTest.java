@@ -728,7 +728,7 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of();
 
         var result = DependencyUsageAnalyzer.builder()
-                .reflectionLoadedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver")))
+                .extraUsedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver")))
                 .build()
                 .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of(), true);
 
@@ -745,7 +745,7 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of();
 
         var result = DependencyUsageAnalyzer.builder()
-                .reflectionLoadedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver")))
+                .extraUsedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver")))
                 .build()
                 .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of(), true);
 
@@ -762,7 +762,7 @@ class DependencyUsageAnalyzerTest {
         Map<String, File> gaToJar = Map.of();
 
         var result = DependencyUsageAnalyzer.builder()
-                .reflectionLoadedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver")))
+                .extraUsedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver")))
                 .build()
                 .analyze(Set.of(), Set.of(), classIndex, gaToJar, List.of(dep), List.of(), true);
 
@@ -1366,7 +1366,61 @@ class DependencyUsageAnalyzerTest {
                 .containsEntry("com.example:compile-lib", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
     }
 
-    // --- GraalVM Native Image reflect-config false-positive reproducer ---
+    @Test
+    void graalvmBundledReflectConfigInDepJarIsUndetermined(@TempDir Path tempDir) throws Exception {
+        // A dep that ships its own reflect-config.json under META-INF/native-image/
+        // with no matching bytecode reference in the consumer → UNDETERMINED.
+        Path tempJar = tempDir.resolve("graalvm-dep.jar");
+        try (var os = java.nio.file.Files.newOutputStream(tempJar);
+                var jos = new java.util.jar.JarOutputStream(os)) {
+            jos.putNextEntry(new java.util.jar.JarEntry("META-INF/native-image/com.example/mylib/reflect-config.json"));
+            jos.write("[]".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            jos.closeEntry();
+        }
+
+        var dep = new DependenciesTui.DepEntry("com.example", "mylib", "", "1.0", "compile", true);
+        Map<String, File> gaToJar = Map.of("com.example:mylib", tempJar.toFile());
+        Map<String, String> classIndex = Map.of("com.example.MyClass", "com.example:mylib");
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(Set.of("com.app.Main"), Set.of(), classIndex, gaToJar, List.of(dep), List.of(), true);
+
+        assertThat(result.declaredUsage())
+                .containsEntry("com.example:mylib", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
+    @Test
+    void graalvmBundledReflectConfigWithMatchingClassIsUsed(@TempDir Path tempDir) throws Exception {
+        // A dep that ships reflect-config.json naming a class that the consumer also imports
+        // → the extracted class name matches the consumer's bytecode refs → USED.
+        Path tempJar = tempDir.resolve("graalvm-dep.jar");
+        try (var os = java.nio.file.Files.newOutputStream(tempJar);
+                var jos = new java.util.jar.JarOutputStream(os)) {
+            jos.putNextEntry(new java.util.jar.JarEntry("META-INF/native-image/com.example/mylib/reflect-config.json"));
+            String json = "[{\"name\":\"com.example.MyReflectedClass\"}]";
+            jos.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            jos.closeEntry();
+        }
+
+        var dep = new DependenciesTui.DepEntry("com.example", "mylib", "", "1.0", "compile", true);
+        Map<String, File> gaToJar = Map.of("com.example:mylib", tempJar.toFile());
+        Map<String, String> classIndex = Map.of("com.example.MyReflectedClass", "com.example:mylib");
+
+        // Consumer references the reflected class directly (e.g. via Class.forName constant)
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(
+                        Set.of("com.example.MyReflectedClass"),
+                        Set.of(),
+                        classIndex,
+                        gaToJar,
+                        List.of(dep),
+                        List.of(),
+                        true);
+
+        assertThat(result.declaredUsage()).containsEntry("com.example:mylib", DependencyUsageAnalyzer.UsageStatus.USED);
+    }
 
     /**
      * GraalVM Native Image {@code reflect-config.json} references classes by name — those class
@@ -1376,17 +1430,17 @@ class DependencyUsageAnalyzerTest {
      *
      * <p>This test documents the <em>correct</em> end-state: once the mojo parses
      * {@code reflect-config.json} and feeds the discovered class names into
-     * {@link DependencyUsageAnalyzer.Builder#reflectionLoadedClasses}, the dep is classified
+     * {@link DependencyUsageAnalyzer.Builder#extraUsedClasses}, the dep is classified
      * {@code USED} (class name found in the dep's JAR).</p>
      *
      * <p>Implementation note (Option B): the mojo is responsible for parsing
      * {@code outputDirectory/META-INF/native-image/**&#47;reflect-config.json} and populating
-     * {@code reflectionLoadedClasses} before invoking the analyzer. The analyzer itself remains
+     * {@code extraUsedClasses} before invoking the analyzer. The analyzer itself remains
      * purely bytecode/metadata-driven.</p>
      */
     @Test
     void graalvmReflectConfigClassMarksDepAsUsed() {
-        // matchesReflectionLoadedClasses checks the class index, not JAR bytes — no JAR needed.
+        // matchesExtraUsedClasses checks the class index, not JAR bytes — no JAR needed.
         var dep = new DependenciesTui.DepEntry("com.example", "mylib", "", "1.0", "compile", true);
         Map<String, File> gaToJar = Map.of();
         // Class is in the dep's index but never referenced in bytecode
@@ -1394,7 +1448,7 @@ class DependencyUsageAnalyzerTest {
 
         // The mojo will parse reflect-config.json and feed the class name here (Option B)
         var result = DependencyUsageAnalyzer.builder()
-                .reflectionLoadedClasses(Map.of("com.example:mylib", List.of("com.example.MyReflectedClass")))
+                .extraUsedClasses(Map.of("com.example:mylib", List.of("com.example.MyReflectedClass")))
                 .build()
                 .analyze(
                         Set.of("com.app.Main"), // no bytecode reference to com.example.MyReflectedClass
@@ -1405,17 +1459,17 @@ class DependencyUsageAnalyzerTest {
                         List.of(),
                         true);
 
-        // With reflectionLoadedClasses populated (by the mojo from reflect-config.json),
+        // With extraUsedClasses populated (by the mojo from reflect-config.json),
         // the dep must be USED — the class exists in the index and is declared in the config
         assertThat(result.declaredUsage())
                 .as("dep referenced only via reflect-config.json must be USED once the mojo feeds"
-                        + " reflectionLoadedClasses from native-image metadata")
+                        + " extraUsedClasses from native-image metadata")
                 .containsEntry("com.example:mylib", DependencyUsageAnalyzer.UsageStatus.USED);
     }
 
     /**
      * Counterpart to {@link #graalvmReflectConfigClassMarksDepAsUsed}: without the mojo parsing
-     * {@code reflect-config.json} and populating {@code reflectionLoadedClasses}, the same dep is
+     * {@code reflect-config.json} and populating {@code extraUsedClasses}, the same dep is
      * classified {@code UNUSED} — the current (broken) behaviour that issue #165 addresses.
      *
      * <p>This test is the red-light reproducer: it must pass until the mojo-side parsing is
@@ -1423,14 +1477,14 @@ class DependencyUsageAnalyzerTest {
      */
     @Test
     void graalvmReflectConfigClassIsUnusedWithoutExplicitConfig() {
-        // Same dep, but no JAR provided and no reflectionLoadedClasses configured —
+        // Same dep, but no JAR provided and no extraUsedClasses configured —
         // the mojo hasn't parsed reflect-config.json yet (current / broken state).
         // gaToJar is empty to avoid feeding an empty-byte JAR to the ASM-based scanner.
         var dep = new DependenciesTui.DepEntry("com.example", "mylib", "", "1.0", "compile", true);
         Map<String, File> gaToJar = Map.of();
         Map<String, String> classIndex = Map.of("com.example.MyReflectedClass", "com.example:mylib");
 
-        // No reflectionLoadedClasses — mojo hasn't parsed reflect-config.json yet (current state)
+        // No extraUsedClasses — mojo hasn't parsed reflect-config.json yet (current state)
         var result = DependencyUsageAnalyzer.builder()
                 .build()
                 .analyze(Set.of("com.app.Main"), Set.of(), classIndex, gaToJar, List.of(dep), List.of(), true);
@@ -1445,22 +1499,22 @@ class DependencyUsageAnalyzerTest {
     /**
      * Verifies that {@code resource-config.json} class references (GraalVM resource bundles) are
      * also covered: a dep providing only resource-accessed classes must not be flagged UNUSED once
-     * the mojo feeds its class names via {@code reflectionLoadedClasses}.
+     * the mojo feeds its class names via {@code extraUsedClasses}.
      */
     @Test
     void graalvmResourceConfigClassMarksDepAsUsed() {
-        // matchesReflectionLoadedClasses checks the class index, not JAR bytes — no JAR needed.
+        // matchesExtraUsedClasses checks the class index, not JAR bytes — no JAR needed.
         var dep = new DependenciesTui.DepEntry("com.example", "i18n-lib", "", "2.0", "runtime", true);
         Map<String, File> gaToJar = Map.of();
         Map<String, String> classIndex = Map.of("com.example.i18n.Messages", "com.example:i18n-lib");
 
         var result = DependencyUsageAnalyzer.builder()
-                .reflectionLoadedClasses(Map.of("com.example:i18n-lib", List.of("com.example.i18n.Messages")))
+                .extraUsedClasses(Map.of("com.example:i18n-lib", List.of("com.example.i18n.Messages")))
                 .build()
                 .analyze(Set.of("com.app.Main"), Set.of(), classIndex, gaToJar, List.of(dep), List.of(), true);
 
         assertThat(result.declaredUsage())
-                .as("dep referenced only via resource-config.json must be USED once reflectionLoadedClasses is fed")
+                .as("dep referenced only via resource-config.json must be USED once extraUsedClasses is fed")
                 .containsEntry("com.example:i18n-lib", DependencyUsageAnalyzer.UsageStatus.USED);
     }
 

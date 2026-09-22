@@ -40,7 +40,8 @@ import java.util.jar.JarFile;
  * <ul>
  * <li><b>runtimeArtifacts</b> — artifacts needed only at runtime (JDBC drivers, SLF4J backends)</li>
  * <li><b>annotationOnlyArtifacts</b> — artifacts providing source/class-retention annotations</li>
- * <li><b>reflectionLoadedClasses</b> — classes loaded via reflection, verified against the JAR</li>
+ * <li><b>extraUsedClasses</b> — classes invisible to bytecode analysis (reflection, native-image
+ *     metadata), verified against the JAR's class index</li>
  * </ul>
  * <p>
  * Use {@link #builder()} to configure allowlists:
@@ -50,7 +51,7 @@ import java.util.jar.JarFile;
  * DependencyUsageAnalyzer analyzer = DependencyUsageAnalyzer.builder()
  *         .runtimeArtifacts(Set.of("org.postgresql:postgresql"))
  *         .annotationOnlyArtifacts(Set.of("org.projectlombok:lombok"))
- *         .reflectionLoadedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver"))).build();
+ *         .extraUsedClasses(Map.of("org.postgresql:postgresql", List.of("org.postgresql.Driver"))).build();
  * }</pre>
  */
 public final class DependencyUsageAnalyzer {
@@ -68,6 +69,7 @@ public final class DependencyUsageAnalyzer {
             new DiscoveryConvention.CamelConvention(), // before ServiceLoader — overlapping prefix
             new DiscoveryConvention.SpringBootConvention(),
             new DiscoveryConvention.QuarkusConvention(),
+            new DiscoveryConvention.GraalVmConvention(),
             new DiscoveryConvention.ServiceLoaderConvention() // catch-all, must be last
             );
 
@@ -143,15 +145,15 @@ public final class DependencyUsageAnalyzer {
 
     private final Set<String> runtimeArtifacts;
     private final Set<String> annotationOnlyArtifacts;
-    private final Map<String, List<String>> reflectionLoadedClasses;
+    private final Map<String, List<String>> extraUsedClasses;
     private final Map<String, Boolean> inlineableConstantsCache = new HashMap<>();
 
     private DependencyUsageAnalyzer(Builder builder) {
         this.runtimeArtifacts = Set.copyOf(builder.runtimeArtifacts);
         this.annotationOnlyArtifacts = Set.copyOf(builder.annotationOnlyArtifacts);
         HashMap<String, List<String>> copy = new HashMap<>();
-        builder.reflectionLoadedClasses.forEach((k, v) -> copy.put(k, List.copyOf(v)));
-        this.reflectionLoadedClasses = Collections.unmodifiableMap(copy);
+        builder.extraUsedClasses.forEach((k, v) -> copy.put(k, List.copyOf(v)));
+        this.extraUsedClasses = Collections.unmodifiableMap(copy);
     }
 
     public static Builder builder() {
@@ -281,7 +283,7 @@ public final class DependencyUsageAnalyzer {
         // test scope — to avoid removing it from the production runtime classpath.
         if (matchesArtifactPattern(dep.ga(), annotationOnlyArtifacts)
                 || matchesArtifactPattern(dep.ga(), runtimeArtifacts)
-                || matchesReflectionLoadedClasses(dep.ga(), depClasses)) {
+                || matchesExtraUsedClasses(dep.ga(), depClasses)) {
             return UsageStatus.USED;
         }
 
@@ -464,11 +466,11 @@ public final class DependencyUsageAnalyzer {
         return new DiscoveryInfo(Set.copyOf(classes), impliesUndetermined);
     }
 
-    private boolean matchesReflectionLoadedClasses(String ga, Set<String> depClasses) {
+    private boolean matchesExtraUsedClasses(String ga, Set<String> depClasses) {
         if (depClasses == null) {
             return false;
         }
-        List<String> expectedClasses = reflectionLoadedClasses.get(ga);
+        List<String> expectedClasses = extraUsedClasses.get(ga);
         if (expectedClasses == null) {
             return false;
         }
@@ -543,7 +545,7 @@ public final class DependencyUsageAnalyzer {
     public static final class Builder {
         private Set<String> runtimeArtifacts = Set.of();
         private Set<String> annotationOnlyArtifacts = Set.of();
-        private Map<String, List<String>> reflectionLoadedClasses = Map.of();
+        private Map<String, List<String>> extraUsedClasses = Map.of();
 
         private Builder() {}
 
@@ -566,13 +568,15 @@ public final class DependencyUsageAnalyzer {
         }
 
         /**
-         * Classes known to be loaded via reflection, mapped by their providing artifact. Keys must be exact
-         * {@code groupId:artifactId} coordinates; wildcard patterns like {@code groupId:*} are not supported. During
-         * classification the artifact's class index is checked to verify the class is actually present, so the
+         * Classes known to be used but invisible to bytecode analysis — loaded via reflection,
+         * referenced from native-image metadata, or otherwise accessed without a direct import.
+         * Mapped by providing artifact; keys must be exact {@code groupId:artifactId} coordinates
+         * (wildcard patterns like {@code groupId:*} are not supported). During classification the
+         * artifact's class index is checked to verify the class is actually present, so the
          * allowlist stays valid even if a class moves.
          */
-        public Builder reflectionLoadedClasses(Map<String, List<String>> classes) {
-            this.reflectionLoadedClasses = classes;
+        public Builder extraUsedClasses(Map<String, List<String>> classes) {
+            this.extraUsedClasses = classes;
             return this;
         }
 

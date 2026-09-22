@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
@@ -475,14 +476,14 @@ class DependencyUsageAnalyzerTest {
         // spring.factories content: the interface keys must be extracted so that a consumer
         // referencing e.g. ApplicationContextInitializer (not EnableAutoConfiguration) is also USED.
         Path tempJar = tempDir.resolve("spring-init-lib.jar");
-        try (var os = java.nio.file.Files.newOutputStream(tempJar);
-                var jos = new java.util.jar.JarOutputStream(os)) {
-            jos.putNextEntry(new java.util.jar.JarEntry("META-INF/spring.factories"));
+        try (var os = Files.newOutputStream(tempJar);
+                var jos = new JarOutputStream(os)) {
+            jos.putNextEntry(new JarEntry("META-INF/spring.factories"));
             String content = "org.springframework.context.ApplicationContextInitializer=\\\n"
                     + "  com.example.MyInitializer\n"
                     + "org.springframework.boot.autoconfigure.EnableAutoConfiguration=\\\n"
                     + "  com.example.FooAutoConfiguration\n";
-            jos.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            jos.write(content.getBytes(StandardCharsets.UTF_8));
             jos.closeEntry();
         }
 
@@ -511,12 +512,12 @@ class DependencyUsageAnalyzerTest {
         // spring.factories present but consumer references neither interface — must be UNDETERMINED,
         // not UNUSED, because Spring Boot loads auto-configurations at runtime.
         Path tempJar = tempDir.resolve("spring-auto.jar");
-        try (var os = java.nio.file.Files.newOutputStream(tempJar);
-                var jos = new java.util.jar.JarOutputStream(os)) {
-            jos.putNextEntry(new java.util.jar.JarEntry("META-INF/spring.factories"));
+        try (var os = Files.newOutputStream(tempJar);
+                var jos = new JarOutputStream(os)) {
+            jos.putNextEntry(new JarEntry("META-INF/spring.factories"));
             String content = "org.springframework.boot.autoconfigure.EnableAutoConfiguration=\\\n"
                     + "  com.example.FooAutoConfiguration\n";
-            jos.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            jos.write(content.getBytes(StandardCharsets.UTF_8));
             jos.closeEntry();
         }
 
@@ -889,7 +890,7 @@ class DependencyUsageAnalyzerTest {
     void mavenDiEntryDetectedByHasMavenDiOrSisu(@TempDir Path tempDir) throws Exception {
         Path tempJar = tempDir.resolve("maven-di.jar");
         createJarWithEntries(tempJar, "META-INF/maven/org.apache.maven.api.di.Inject");
-        assertThat(DependencyUsageAnalyzer.hasMavenDiOrSisuRegistration(tempJar.toFile()))
+        assertThat(DependencyUsageAnalyzer.hasImpliesUndeterminedRegistration(tempJar.toFile()))
                 .isTrue();
     }
 
@@ -898,7 +899,7 @@ class DependencyUsageAnalyzerTest {
         // META-INF/maven/org.apache.maven/maven-jline/pom.xml is POM metadata, not a DI index
         Path tempJar = tempDir.resolve("regular.jar");
         createJarWithEntries(tempJar, "META-INF/maven/org.apache.maven/maven-jline/pom.xml");
-        assertThat(DependencyUsageAnalyzer.hasMavenDiOrSisuRegistration(tempJar.toFile()))
+        assertThat(DependencyUsageAnalyzer.hasImpliesUndeterminedRegistration(tempJar.toFile()))
                 .isFalse();
     }
 
@@ -1371,10 +1372,10 @@ class DependencyUsageAnalyzerTest {
         // A dep that ships its own reflect-config.json under META-INF/native-image/
         // with no matching bytecode reference in the consumer → UNDETERMINED.
         Path tempJar = tempDir.resolve("graalvm-dep.jar");
-        try (var os = java.nio.file.Files.newOutputStream(tempJar);
-                var jos = new java.util.jar.JarOutputStream(os)) {
-            jos.putNextEntry(new java.util.jar.JarEntry("META-INF/native-image/com.example/mylib/reflect-config.json"));
-            jos.write("[]".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        try (var os = Files.newOutputStream(tempJar);
+                var jos = new JarOutputStream(os)) {
+            jos.putNextEntry(new JarEntry("META-INF/native-image/com.example/mylib/reflect-config.json"));
+            jos.write("[]".getBytes(StandardCharsets.UTF_8));
             jos.closeEntry();
         }
 
@@ -1395,11 +1396,11 @@ class DependencyUsageAnalyzerTest {
         // A dep that ships reflect-config.json naming a class that the consumer also imports
         // → the extracted class name matches the consumer's bytecode refs → USED.
         Path tempJar = tempDir.resolve("graalvm-dep.jar");
-        try (var os = java.nio.file.Files.newOutputStream(tempJar);
-                var jos = new java.util.jar.JarOutputStream(os)) {
-            jos.putNextEntry(new java.util.jar.JarEntry("META-INF/native-image/com.example/mylib/reflect-config.json"));
+        try (var os = Files.newOutputStream(tempJar);
+                var jos = new JarOutputStream(os)) {
+            jos.putNextEntry(new JarEntry("META-INF/native-image/com.example/mylib/reflect-config.json"));
             String json = "[{\"name\":\"com.example.MyReflectedClass\"}]";
-            jos.write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            jos.write(json.getBytes(StandardCharsets.UTF_8));
             jos.closeEntry();
         }
 

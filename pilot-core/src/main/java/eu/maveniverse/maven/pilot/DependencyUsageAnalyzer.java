@@ -414,16 +414,17 @@ public final class DependencyUsageAnalyzer {
     }
 
     /**
-     * Returns {@code true} if the JAR contains a Maven DI index ({@code META-INF/maven/<annotation-fqn>}) or a Sisu
-     * index ({@code META-INF/sisu/<annotation-fqn>}).
+     * Returns {@code true} if the JAR contains any runtime-discovery registration that would
+     * cause it to be classified {@link UsageStatus#UNDETERMINED} rather than {@link UsageStatus#UNUSED}.
      * <p>
-     * These index files are written at build time by the Sisu Maven plugin and the Maven DI compiler plugin. At runtime
-     * the DI container reads them to discover injectable components without any direct bytecode reference in the
-     * consuming module.
+     * This covers all conventions whose {@link DiscoveryConvention#impliesUndetermined()} flag
+     * returns {@code true}: Maven DI, Sisu, Camel, Spring Boot, Quarkus, and GraalVM native-image
+     * metadata. A JAR matching any of these conventions registers runtime-wired components whose
+     * usage cannot be verified through bytecode analysis alone.
      * </p>
      */
     @SuppressWarnings("java:S5042") // JARs are from Maven's local repository, already verified
-    static boolean hasMavenDiOrSisuRegistration(File jarFile) {
+    static boolean hasImpliesUndeterminedRegistration(File jarFile) {
         return scanDiscoveryMetadata(jarFile).impliesUndetermined();
     }
 

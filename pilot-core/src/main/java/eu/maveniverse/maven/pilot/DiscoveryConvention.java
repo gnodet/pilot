@@ -18,12 +18,12 @@
  */
 package eu.maveniverse.maven.pilot;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
+import java.util.Properties;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -276,44 +276,12 @@ sealed interface DiscoveryConvention
          */
         @Override
         public Set<String> matchContent(JarFile jar, JarEntry entry) throws IOException {
-            Set<String> keys = new HashSet<>();
+            var props = new Properties();
             try (InputStream is = jar.getInputStream(entry);
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
-                StringBuilder logical = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    // Properties line-continuation: trailing backslash joins lines
-                    if (line.endsWith("\\")) {
-                        logical.append(line, 0, line.length() - 1);
-                    } else {
-                        logical.append(line);
-                        String logicalLine = logical.toString().strip();
-                        logical.setLength(0);
-                        if (logicalLine.isEmpty() || logicalLine.startsWith("#")) {
-                            continue;
-                        }
-                        int eq = logicalLine.indexOf('=');
-                        if (eq > 0) {
-                            String key = logicalLine.substring(0, eq).strip();
-                            if (!key.isEmpty()) {
-                                keys.add(key);
-                            }
-                        }
-                    }
-                }
-                // Flush any trailing continuation
-                String remainder = logical.toString().strip();
-                if (!remainder.isEmpty() && !remainder.startsWith("#")) {
-                    int eq = remainder.indexOf('=');
-                    if (eq > 0) {
-                        String key = remainder.substring(0, eq).strip();
-                        if (!key.isEmpty()) {
-                            keys.add(key);
-                        }
-                    }
-                }
+                    var reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
+                props.load(reader);
             }
-            return keys;
+            return Set.copyOf(props.stringPropertyNames());
         }
     }
 

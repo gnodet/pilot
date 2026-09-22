@@ -72,6 +72,12 @@ import org.eclipse.aether.resolution.DependencyResult;
  * whose status is already confidently known (USED or UNUSED) as the opposite is treated as an
  * error — it means the annotation is stale.</p>
  *
+ * <p>When {@code action=fix}, the mojo iterates until no more changes are found or
+ * {@code pilot.maxIterations} is reached. This is necessary because adding a previously
+ * transitive dependency may expose further transitive dependencies in the next pass.
+ * A clear per-pass summary is logged for auditability. Use {@code -Dpilot.maxIterations=1}
+ * to restore single-pass behaviour.</p>
+ *
  * <p>Usage:</p>
  * <pre>
  * mvn package pilot:dependencies                                            # full analysis (recommended)
@@ -79,6 +85,7 @@ import org.eclipse.aether.resolution.DependencyResult;
  * mvn package pilot:dependencies -Dpilot.action=check
  * mvn package pilot:dependencies -Dpilot.action=check -Dpilot.failOnUndetermined=true
  * mvn package pilot:dependencies -Dpilot.action=fix
+ * mvn package pilot:dependencies -Dpilot.action=fix -Dpilot.maxIterations=1  # single pass
  * mvn compile pilot:dependencies -Dpilot.skipTestScope=true                # skip test-scope analysis
  * </pre>
  *
@@ -95,6 +102,25 @@ public class DependenciesMojo extends AbstractMojo {
 
     @Parameter(property = "pilot.action", defaultValue = "report")
     String action = "report";
+
+    /**
+     * Maximum number of fix iterations when {@code action=fix}.
+     *
+     * <p>Each pass of the fix action re-analyses the updated POM and applies further changes.
+     * Multiple passes are sometimes needed because adding a previously transitive dependency
+     * can expose additional transitive dependencies in the next pass.</p>
+     *
+     * <p>The mojo stops early when a pass produces zero changes (converged), so the actual
+     * number of passes is typically much lower than the maximum. A per-pass summary is always
+     * logged so the audit trail is clear regardless of how many passes ran.</p>
+     *
+     * <p>Set to {@code 1} to restore the original single-pass behaviour.
+     * Has no effect when {@code action} is {@code report} or {@code check}.</p>
+     *
+     * @since 0.5.0
+     */
+    @Parameter(property = "pilot.maxIterations", defaultValue = "5")
+    int maxIterations = 5;
 
     /**
      * When {@code true}, test-scoped dependencies are excluded from analysis entirely.
@@ -200,8 +226,15 @@ public class DependenciesMojo extends AbstractMojo {
         if (!"report".equals(action) && !"check".equals(action) && !"fix".equals(action)) {
             throw new MojoExecutionException("Invalid action '" + action + "'. Use 'report', 'check', or 'fix'.");
         }
+        if ("fix".equals(action) && maxIterations < 1) {
+            throw new MojoExecutionException("pilot.maxIterations must be >= 1, got: " + maxIterations);
+        }
         try {
-            executeForProject(project);
+            if ("fix".equals(action)) {
+                executeFixWithIterations(project);
+            } else {
+                executeForProject(project);
+            }
         } catch (MojoFailureException e) {
             throw e;
         } catch (Exception e) {
@@ -209,23 +242,112 @@ public class DependenciesMojo extends AbstractMojo {
         }
     }
 
-    void executeForProject(MavenProject proj) throws Exception {
-        if ("pom".equals(proj.getPackaging())) {
-            getLog().debug("Skipping " + proj.getArtifactId() + " (pom packaging, no classes to analyse).");
-            return;
+    /**
+     * Runs the fix action in a convergence loop, up to {@code maxIterations} passes.
+     * Stops early when a pass makes no changes (the POM has converged).
+     * Logs a clear per-pass summary for auditability.
+     *
+     * <p><b>Note on convergence:</b> within a single Maven invocation, the in-memory
+     * {@link MavenProject} model is not refreshed between passes. As a result, this loop
+     * typically converges in at most 2 passes: pass 1 applies all changes to the POM on disk;
+     * pass 2 detects that the same operations are no-ops (the dep is already present/absent)
+     * and exits. Multi-pass transitive discovery — where adding a dependency exposes further
+     * transitive dependencies in subsequent passes — requires re-running
+     * {@code mvn pilot:dependencies -Dpilot.action=fix}
+     * in a new Maven invocation so the updated POM is re-read. {@code maxIterations} serves as
+     * a safety cap in case future improvements enable in-process POM reloading.
+     * </p>
+     */
+    void executeFixWithIterations(MavenProject proj) throws Exception {
+        int totalAdded = 0;
+        int totalRemoved = 0;
+        int totalNarrowed = 0;
+        for (int pass = 1; pass <= maxIterations; pass++) {
+            boolean isLastAllowed = pass == maxIterations;
+
+            CountingFixLogger passLogger = new CountingFixLogger(getLog()::info);
+            executeForProject(proj, passLogger);
+
+            int passAdded = passLogger.added;
+            int passRemoved = passLogger.removed;
+            int passNarrowed = passLogger.narrowed;
+            int passTotal = passAdded + passRemoved + passNarrowed;
+
+            totalAdded += passAdded;
+            totalRemoved += passRemoved;
+            totalNarrowed += passNarrowed;
+
+            if (passTotal == 0) {
+                if (pass == 1) {
+                    getLog().info("No dependency issues found.");
+                } else {
+                    getLog().info("[pilot] Pass %d/%d: 0 changes — converged. Total: %d added, %d removed, %d narrowed."
+                            .formatted(pass, maxIterations, totalAdded, totalRemoved, totalNarrowed));
+                }
+                return;
+            }
+
+            getLog().info("[pilot] Pass %d/%d: %d added, %d removed, %d narrowed to test scope."
+                    .formatted(pass, maxIterations, passAdded, passRemoved, passNarrowed));
+
+            if (isLastAllowed) {
+                getLog().warn(("[pilot] Reached max-iterations limit (%d). POM may not be fully converged."
+                                + " Re-run with a higher -Dpilot.maxIterations value or run again to continue.")
+                        .formatted(maxIterations));
+                getLog().info("[pilot] Total after %d passes: %d added, %d removed, %d narrowed."
+                        .formatted(maxIterations, totalAdded, totalRemoved, totalNarrowed));
+            }
         }
+    }
 
-        // Early-exit guards: check filesystem state before the expensive dependency resolution.
-        Path classesDir = Path.of(proj.getBuild().getOutputDirectory());
-        Path testClassesDir = Path.of(proj.getBuild().getTestOutputDirectory());
+    void executeForProject(MavenProject proj) throws Exception {
+        executeForProject(proj, null);
+    }
 
-        boolean hasMainSources = hasMainSources(proj);
-        if (hasMainSources && !Files.isDirectory(classesDir)) {
+    /**
+     * Holds the two artifact maps built from a resolved {@link DependencyResult}.
+     *
+     * @param gaToJar     GA (with optional classifier) → local jar {@link File}
+     * @param gaToVersion GA (with optional classifier) → resolved version string
+     */
+    record ArtifactMaps(Map<String, File> gaToJar, Map<String, String> gaToVersion) {}
+
+    /**
+     * Builds the {@link ArtifactMaps} (GA → jar, GA → version) from a resolved dependency result.
+     * Classifier-carrying artifacts are keyed as {@code groupId:artifactId:classifier}.
+     */
+    static ArtifactMaps buildArtifactMaps(DependencyResult depResult) {
+        Map<String, File> gaToJar = new HashMap<>();
+        Map<String, String> gaToVersion = new HashMap<>();
+        for (ArtifactResult ar : depResult.getArtifactResults()) {
+            var art = ar.getArtifact();
+            if (art == null) {
+                continue;
+            }
+            String classifier = art.getClassifier();
+            String ga = (classifier != null && !classifier.isEmpty())
+                    ? art.getGroupId() + ":" + art.getArtifactId() + ":" + classifier
+                    : art.getGroupId() + ":" + art.getArtifactId();
+            gaToVersion.put(ga, art.getVersion());
+            if (art.getFile() != null && art.getFile().getName().endsWith(".jar")) {
+                gaToJar.put(ga, art.getFile());
+            }
+        }
+        return new ArtifactMaps(gaToJar, gaToVersion);
+    }
+
+    /**
+     * Validates that compiled output directories exist when the project has the corresponding
+     * sources.  Throws {@link MojoExecutionException} early (before expensive dependency
+     * resolution) when a required directory is absent.
+     */
+    private void checkBuildOutputDirs(MavenProject proj, Path classesDir, Path testClassesDir)
+            throws MojoExecutionException, IOException {
+        if (hasMainSources(proj) && !Files.isDirectory(classesDir)) {
             throw new MojoExecutionException("target/classes not found. Run 'mvn compile pilot:dependencies' first.");
         }
-        boolean hasTestSources = hasTestSources(proj);
         if (!skipTestScope
-                && hasTestSources
+                && hasTestSources(proj)
                 && !Files.isDirectory(testClassesDir)
                 && proj.getDependencies().stream()
                         .anyMatch(dep -> DependencyUsageAnalyzer.isTestScope(dep.getScope()))) {
@@ -234,6 +356,28 @@ public class DependenciesMojo extends AbstractMojo {
                             + " Run 'mvn test-compile' first for accurate analysis,"
                             + " or use -Dpilot.skipTestScope=true to exclude test-scope analysis.");
         }
+    }
+
+    /**
+     * Core per-project analysis and action dispatch.
+     *
+     * @param fixLogger optional logger override for the fix action; when {@code null} the mojo's
+     *                  own logger is used. Pass a {@link CountingFixLogger} from the iteration
+     *                  loop to count changes per pass without duplicating analysis logic.
+     */
+    void executeForProject(MavenProject proj, DependenciesReporter.FixLogger fixLogger) throws Exception {
+        if ("pom".equals(proj.getPackaging())) {
+            getLog().debug("Skipping " + proj.getArtifactId() + " (pom packaging, no classes to analyse).");
+            return;
+        }
+
+        // Early-exit guards: check filesystem state before the expensive dependency resolution.
+        Path classesDir = Path.of(proj.getBuild().getOutputDirectory());
+        Path testClassesDir = Path.of(proj.getBuild().getTestOutputDirectory());
+        checkBuildOutputDirs(proj, classesDir, testClassesDir);
+
+        boolean hasMainSources = hasMainSources(proj);
+        boolean hasTestSources = hasTestSources(proj);
 
         // Collect dependencies from this module's effective model (own + inherited).
         // We split them into "own" (declared in this module's pom.xml) and "inherited" (from a parent).
@@ -274,40 +418,11 @@ public class DependenciesMojo extends AbstractMojo {
         // Suppress transitive deps that are exclusively reachable via type=pom aggregator
         // declared dependencies — those are intentional "classpath importers" and flagging
         // their transitive closure as "used transitive (should be declared)" is a false positive.
-        if (!pomAggregatorGAs.isEmpty()) {
-            Set<String> pomCoveredGAs = DependenciesTui.collectPomAggregatorCoveredGAs(depTree.root, pomAggregatorGAs);
-            if (!pomCoveredGAs.isEmpty()) {
-                Set<String> suppressedGAs = new HashSet<>();
-                transitive.removeIf(dep -> {
-                    if (!pomCoveredGAs.contains(dep.ga())) {
-                        return false;
-                    }
-                    suppressedGAs.add(dep.ga());
-                    return true;
-                });
-                if (!suppressedGAs.isEmpty()) {
-                    getLog().debug(suppressedGAs.size()
-                            + " transitive dep(s) suppressed — exclusively pulled by type=pom"
-                            + " aggregator(s); suppressed GAs: " + suppressedGAs);
-                }
-            }
-        }
+        suppressPomAggregatorCoveredTransitives(transitive, depTree, pomAggregatorGAs);
 
-        Map<String, File> gaToJar = new HashMap<>();
-        Map<String, String> gaToVersion = new HashMap<>();
-        for (ArtifactResult ar : depResult.getArtifactResults()) {
-            var art = ar.getArtifact();
-            if (art != null) {
-                String classifier = art.getClassifier();
-                String ga = (classifier != null && !classifier.isEmpty())
-                        ? art.getGroupId() + ":" + art.getArtifactId() + ":" + classifier
-                        : art.getGroupId() + ":" + art.getArtifactId();
-                gaToVersion.put(ga, art.getVersion());
-                if (art.getFile() != null && art.getFile().getName().endsWith(".jar")) {
-                    gaToJar.put(ga, art.getFile());
-                }
-            }
-        }
+        ArtifactMaps artifactMaps = buildArtifactMaps(depResult);
+        Map<String, File> gaToJar = artifactMaps.gaToJar();
+        Map<String, String> gaToVersion = artifactMaps.gaToVersion();
 
         // Build set of GAs already managed by an ancestor BOM/parent POM (not by this module itself).
         // When a transitive dependency is already version-managed by an ancestor, the fix action
@@ -318,26 +433,8 @@ public class DependenciesMojo extends AbstractMojo {
         ClassFileScanner.ScanResult mainScan = Files.isDirectory(classesDir)
                 ? ClassFileScanner.scanDirectory(classesDir)
                 : new ClassFileScanner.ScanResult(Set.of(), Map.of());
-        boolean testClassesScanned = Files.isDirectory(testClassesDir);
-        ClassFileScanner.ScanResult testScan;
-        boolean testRefsAvailable;
-
-        if (skipTestScope) {
-            getLog().info("Skipping test-scope dependency analysis (pilot.skipTestScope=true).");
-            // Exclude test-scoped deps from both lists before analysis so they are never
-            // classified and never added/removed by the fix action.
-            declared.removeIf(dep -> DependencyUsageAnalyzer.isTestScope(dep.scope));
-            transitive.removeIf(dep -> DependencyUsageAnalyzer.isTestScope(dep.scope));
-            testScan = new ClassFileScanner.ScanResult(Set.of(), Map.of());
-            testRefsAvailable = false;
-        } else if (hasTestSources && testClassesScanned) {
-            testScan = ClassFileScanner.scanDirectory(testClassesDir);
-            testRefsAvailable = true;
-        } else {
-            // No test sources or no compiled test classes — proceed without test bytecode.
-            testScan = new ClassFileScanner.ScanResult(Set.of(), Map.of());
-            testRefsAvailable = false;
-        }
+        ClassFileScanner.ScanResult testScan = buildTestScan(hasTestSources, testClassesDir, declared, transitive);
+        boolean testRefsAvailable = !skipTestScope && hasTestSources && Files.isDirectory(testClassesDir);
 
         Map<String, String> classIndex = DependencyUsageAnalyzer.buildClassIndex(gaToJar);
         DependencyUsageAnalyzer.AnalysisResult usage = buildAnalyzer()
@@ -351,7 +448,7 @@ public class DependenciesMojo extends AbstractMojo {
                         testRefsAvailable);
         applyUsageStatus(declared, transitive, usage);
 
-        executeNonInteractive(proj, declared, transitive, gaToVersion, ancestorManagedGAs);
+        executeNonInteractive(proj, declared, transitive, gaToVersion, ancestorManagedGAs, fixLogger);
     }
 
     /**
@@ -423,13 +520,68 @@ public class DependenciesMojo extends AbstractMojo {
         return ownPomPath.equals(depSrc);
     }
 
+    /**
+     * Removes from {@code transitive} any entries whose GA is exclusively covered by a
+     * {@code type=pom} aggregator dependency — those are intentional classpath importers and
+     * should not be flagged as "used transitive".
+     */
+    private void suppressPomAggregatorCoveredTransitives(
+            List<DependenciesTui.DepEntry> transitive, DependencyTreeModel depTree, Set<String> pomAggregatorGAs) {
+        if (pomAggregatorGAs.isEmpty()) {
+            return;
+        }
+        Set<String> pomCoveredGAs = DependenciesTui.collectPomAggregatorCoveredGAs(depTree.root, pomAggregatorGAs);
+        if (pomCoveredGAs.isEmpty()) {
+            return;
+        }
+        Set<String> suppressedGAs = new HashSet<>();
+        transitive.removeIf(dep -> {
+            if (!pomCoveredGAs.contains(dep.ga())) {
+                return false;
+            }
+            suppressedGAs.add(dep.ga());
+            return true;
+        });
+        if (!suppressedGAs.isEmpty()) {
+            getLog().debug(suppressedGAs.size()
+                    + " transitive dep(s) suppressed — exclusively pulled by type=pom"
+                    + " aggregator(s); suppressed GAs: " + suppressedGAs);
+        }
+    }
+
+    /**
+     * Builds the test-class scan result for the current project, applying {@code skipTestScope}
+     * filtering when configured. Mutates {@code declared} and {@code transitive} in-place when
+     * {@code skipTestScope=true} to strip test-scoped entries before analysis.
+     */
+    private ClassFileScanner.ScanResult buildTestScan(
+            boolean hasTestSources,
+            Path testClassesDir,
+            List<DependenciesTui.DepEntry> declared,
+            List<DependenciesTui.DepEntry> transitive)
+            throws IOException {
+        if (skipTestScope) {
+            getLog().info("Skipping test-scope dependency analysis (pilot.skipTestScope=true).");
+            // Exclude test-scoped deps from both lists before analysis so they are never
+            // classified and never added/removed by the fix action.
+            declared.removeIf(dep -> DependencyUsageAnalyzer.isTestScope(dep.scope));
+            transitive.removeIf(dep -> DependencyUsageAnalyzer.isTestScope(dep.scope));
+            return new ClassFileScanner.ScanResult(Set.of(), Map.of());
+        }
+        if (hasTestSources && Files.isDirectory(testClassesDir)) {
+            return ClassFileScanner.scanDirectory(testClassesDir);
+        }
+        // No test sources or no compiled test classes — proceed without test bytecode.
+        return new ClassFileScanner.ScanResult(Set.of(), Map.of());
+    }
+
     void executeNonInteractive(
             MavenProject proj,
             List<DependenciesTui.DepEntry> declared,
             List<DependenciesTui.DepEntry> transitive,
             Map<String, String> gaToVersion)
             throws Exception {
-        executeNonInteractive(proj, declared, transitive, gaToVersion, Set.of());
+        executeNonInteractive(proj, declared, transitive, gaToVersion, Set.of(), null);
     }
 
     void executeNonInteractive(
@@ -438,6 +590,17 @@ public class DependenciesMojo extends AbstractMojo {
             List<DependenciesTui.DepEntry> transitive,
             Map<String, String> gaToVersion,
             Set<String> ancestorManagedGAs)
+            throws Exception {
+        executeNonInteractive(proj, declared, transitive, gaToVersion, ancestorManagedGAs, null);
+    }
+
+    void executeNonInteractive(
+            MavenProject proj,
+            List<DependenciesTui.DepEntry> declared,
+            List<DependenciesTui.DepEntry> transitive,
+            Map<String, String> gaToVersion,
+            Set<String> ancestorManagedGAs,
+            DependenciesReporter.FixLogger fixLogger)
             throws Exception {
 
         // --- Apply knownUsed / knownUnused overrides ---
@@ -545,7 +708,7 @@ public class DependenciesMojo extends AbstractMojo {
                         usedTransitive,
                         gaToVersion,
                         ancestorManagedGAs,
-                        getLog()::info);
+                        fixLogger != null ? fixLogger : getLog()::info);
             case "report" ->
                 getLog().warn(DependenciesReporter.formatFindings(
                         unusedDeclared, testScopedDeclared, usedTransitive, visibleUndetermined));
@@ -700,5 +863,40 @@ public class DependenciesMojo extends AbstractMojo {
             }
         }
         return false;
+    }
+
+    /**
+     * A {@link DependenciesReporter.FixLogger} that counts each type of change applied
+     * by a single fix pass, forwarding all messages to a delegate logger.
+     *
+     * <p>Counts are keyed by the prefix of the log message emitted by
+     * {@link DependenciesReporter#fix}:</p>
+     * <ul>
+     *   <li>{@code added}    — "Added used transitive dependency"</li>
+     *   <li>{@code removed}  — "Removed unused dependency"</li>
+     *   <li>{@code narrowed} — "Narrowed to test scope"</li>
+     * </ul>
+     */
+    static final class CountingFixLogger implements DependenciesReporter.FixLogger {
+        int added = 0;
+        int removed = 0;
+        int narrowed = 0;
+        private final DependenciesReporter.FixLogger delegate;
+
+        CountingFixLogger(DependenciesReporter.FixLogger delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void log(String message) {
+            if (message.startsWith("Added used transitive")) {
+                added++;
+            } else if (message.startsWith("Removed unused")) {
+                removed++;
+            } else if (message.startsWith("Narrowed to test scope")) {
+                narrowed++;
+            }
+            delegate.log(message);
+        }
     }
 }

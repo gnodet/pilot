@@ -471,6 +471,140 @@ class DependencyUsageAnalyzerTest {
     }
 
     @Test
+    void springFactoriesInterfaceKeysExtractedFromContent(@TempDir Path tempDir) throws Exception {
+        // spring.factories content: the interface keys must be extracted so that a consumer
+        // referencing e.g. ApplicationContextInitializer (not EnableAutoConfiguration) is also USED.
+        Path tempJar = tempDir.resolve("spring-init-lib.jar");
+        try (var os = java.nio.file.Files.newOutputStream(tempJar);
+                var jos = new java.util.jar.JarOutputStream(os)) {
+            jos.putNextEntry(new java.util.jar.JarEntry("META-INF/spring.factories"));
+            String content = "org.springframework.context.ApplicationContextInitializer=\\\n"
+                    + "  com.example.MyInitializer\n"
+                    + "org.springframework.boot.autoconfigure.EnableAutoConfiguration=\\\n"
+                    + "  com.example.FooAutoConfiguration\n";
+            jos.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            jos.closeEntry();
+        }
+
+        var dep = new DependenciesTui.DepEntry("com.example", "spring-init-lib", "", "1.0", "compile", true);
+        Map<String, File> gaToJar = Map.of("com.example:spring-init-lib", tempJar.toFile());
+        Map<String, String> classIndex = Map.of();
+
+        // Consumer references ApplicationContextInitializer (not EnableAutoConfiguration)
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(
+                        Set.of("org.springframework.context.ApplicationContextInitializer"),
+                        Set.of(),
+                        classIndex,
+                        gaToJar,
+                        List.of(dep),
+                        List.of(),
+                        true);
+
+        assertThat(result.declaredUsage())
+                .containsEntry("com.example:spring-init-lib", DependencyUsageAnalyzer.UsageStatus.USED);
+    }
+
+    @Test
+    void springFactoriesWithNoConsumerReferenceIsUndetermined(@TempDir Path tempDir) throws Exception {
+        // spring.factories present but consumer references neither interface — must be UNDETERMINED,
+        // not UNUSED, because Spring Boot loads auto-configurations at runtime.
+        Path tempJar = tempDir.resolve("spring-auto.jar");
+        try (var os = java.nio.file.Files.newOutputStream(tempJar);
+                var jos = new java.util.jar.JarOutputStream(os)) {
+            jos.putNextEntry(new java.util.jar.JarEntry("META-INF/spring.factories"));
+            String content = "org.springframework.boot.autoconfigure.EnableAutoConfiguration=\\\n"
+                    + "  com.example.FooAutoConfiguration\n";
+            jos.write(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            jos.closeEntry();
+        }
+
+        var dep = new DependenciesTui.DepEntry("com.example", "spring-auto", "", "1.0", "runtime", true);
+        Map<String, File> gaToJar = Map.of("com.example:spring-auto", tempJar.toFile());
+        Map<String, String> classIndex = Map.of();
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(Set.of("com.app.Main"), Set.of(), classIndex, gaToJar, List.of(dep), List.of(), true);
+
+        assertThat(result.declaredUsage())
+                .containsEntry("com.example:spring-auto", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
+    @Test
+    void springBootAutoConfigImportsIsUndetermined(@TempDir Path tempDir) throws Exception {
+        // Spring Boot 3.x META-INF/spring/…AutoConfiguration.imports — presence alone is enough
+        Path tempJar = tempDir.resolve("spring3-auto.jar");
+        createJarWithEntries(
+                tempJar, "META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports");
+
+        var dep = new DependenciesTui.DepEntry("com.example", "spring3-auto", "", "3.0", "runtime", true);
+        Map<String, File> gaToJar = Map.of("com.example:spring3-auto", tempJar.toFile());
+        Map<String, String> classIndex = Map.of();
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(Set.of("com.app.Main"), Set.of(), classIndex, gaToJar, List.of(dep), List.of(), true);
+
+        assertThat(result.declaredUsage())
+                .containsEntry("com.example:spring3-auto", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
+    @Test
+    void quarkusExtensionIsUndetermined(@TempDir Path tempDir) throws Exception {
+        // A Quarkus extension registers META-INF/quarkus-extension.properties.
+        // The Quarkus build system wires it at build time — no direct bytecode reference in the consumer.
+        Path tempJar = tempDir.resolve("quarkus-ext.jar");
+        createJarWithEntries(tempJar, "META-INF/quarkus-extension.properties");
+
+        var dep = new DependenciesTui.DepEntry("io.quarkus", "quarkus-resteasy", "", "3.0.0", "compile", true);
+        Map<String, File> gaToJar = Map.of("io.quarkus:quarkus-resteasy", tempJar.toFile());
+        Map<String, String> classIndex =
+                Map.of("io.quarkus.resteasy.ReactiveExceptionMapper", "io.quarkus:quarkus-resteasy");
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(
+                        Set.of("com.app.Main"), // consumer doesn't reference Quarkus internals
+                        Set.of(),
+                        classIndex,
+                        gaToJar,
+                        List.of(dep),
+                        List.of(),
+                        true);
+
+        assertThat(result.declaredUsage())
+                .containsEntry("io.quarkus:quarkus-resteasy", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
+    @Test
+    void camelYamlDescriptorsInMetaInfCamelAreUndetermined(@TempDir Path tempDir) throws Exception {
+        // Camel 4 YAML descriptors live under META-INF/camel/ (not META-INF/services/org/apache/camel/)
+        Path tempJar = tempDir.resolve("camel-yaml-dsl.jar");
+        createJarWithEntries(tempJar, "META-INF/camel/camel-yaml-dsl.json");
+
+        var dep = new DependenciesTui.DepEntry("org.apache.camel", "camel-yaml-dsl", "", "4.0.0", "compile", true);
+        Map<String, File> gaToJar = Map.of("org.apache.camel:camel-yaml-dsl", tempJar.toFile());
+        Map<String, String> classIndex =
+                Map.of("org.apache.camel.dsl.yaml.YamlRoutesLoader", "org.apache.camel:camel-yaml-dsl");
+
+        var result = DependencyUsageAnalyzer.builder()
+                .build()
+                .analyze(
+                        Set.of("org.apache.camel.builder.RouteBuilder"),
+                        Set.of(),
+                        classIndex,
+                        gaToJar,
+                        List.of(dep),
+                        List.of(),
+                        true);
+
+        assertThat(result.declaredUsage())
+                .containsEntry("org.apache.camel:camel-yaml-dsl", DependencyUsageAnalyzer.UsageStatus.UNDETERMINED);
+    }
+
+    @Test
     void discoveryNotMatchedWhenInterfaceNotReferenced(@TempDir Path tempDir) throws Exception {
         Path tempJar = tempDir.resolve("unused-svc.jar");
         createJarWithEntries(tempJar, "META-INF/services/com.example.UnusedService");

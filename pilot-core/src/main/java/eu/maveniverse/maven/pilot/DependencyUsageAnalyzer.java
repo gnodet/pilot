@@ -537,6 +537,9 @@ public final class DependencyUsageAnalyzer {
      * <li><b>Spring Boot</b>: {@code META-INF/spring.components}, {@code META-INF/spring.factories} (interface keys
      * parsed from content), {@code META-INF/spring/…AutoConfiguration.imports}</li>
      * <li><b>Quarkus</b>: {@code META-INF/quarkus-extension.properties}</li>
+     * <li><b>GraalVM Native Image</b>: {@code META-INF/native-image/…/reflect-config.json},
+     * {@code jni-config.json}, {@code resource-config.json}, {@code proxy-config.json},
+     * {@code serialization-config.json}, {@code reachability-metadata.json}</li>
      * </ul>
      */
     public static Set<String> getRuntimeDiscoveryClasses(File jarFile) {

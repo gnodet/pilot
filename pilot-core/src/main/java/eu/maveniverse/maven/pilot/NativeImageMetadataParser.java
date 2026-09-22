@@ -159,7 +159,7 @@ public final class NativeImageMetadataParser {
      * @param entryName the file name (or last path segment), used to choose the parser; compared
      *                  case-insensitively
      * @param is        open input stream for the JSON content; closed by this method via
-     *                  the internal {@link jakarta.json.JsonReader} wrapper
+     *                  the internal {@link JsonReader} wrapper
      * @param result    accumulator for discovered class names
      * @throws IOException if reading the stream fails
      */

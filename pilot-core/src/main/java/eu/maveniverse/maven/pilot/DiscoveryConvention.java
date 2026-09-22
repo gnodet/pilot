@@ -365,8 +365,8 @@ sealed interface DiscoveryConvention
         @Override
         public Set<String> matchContent(JarFile jar, JarEntry entry) throws IOException {
             Set<String> result = new HashSet<>();
-            try (InputStream is = jar.getInputStream(entry)) {
-                NativeImageMetadataParser.extractClassNames(entry.getName(), is, result);
+            try {
+                NativeImageMetadataParser.extractClassNames(entry.getName(), jar.getInputStream(entry), result);
             } catch (RuntimeException ignored) {
                 // malformed JSON — skip silently, same as NativeImageMetadataParser.scanDirectory
             }

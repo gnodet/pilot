@@ -470,7 +470,7 @@ public class DependenciesMojo extends AbstractMojo {
         // Populate class-level detail fields (usedMembers, totalClasses, spiServices) when verbose
         // output is requested. This is normally done only by the TUI path; we do it here so that
         // the non-interactive report can show evidence for each finding.
-        if (verbose) {
+        if (verbose && !"fix".equals(action)) {
             PilotEngine.populateDepDetails(declared, transitive, classIndex, gaToJar, mainScan, testScan);
         }
 

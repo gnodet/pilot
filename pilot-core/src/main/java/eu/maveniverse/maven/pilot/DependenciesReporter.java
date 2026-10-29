@@ -245,7 +245,11 @@ public final class DependenciesReporter {
      * Format a check-failure message, including test-scope narrowing and undetermined dependencies,
      * with optional class-level evidence.
      *
-     * @param verbose when {@code true}, include class-level evidence for each finding
+     * @param unusedDeclared     declared dependencies confirmed unused (can be removed)
+     * @param testScopedDeclared declared dependencies used only in tests (scope should be narrowed to test)
+     * @param usedTransitive     transitive dependencies confirmed used (should be declared)
+     * @param undetermined       dependencies whose usage could not be determined
+     * @param verbose            when {@code true}, include class-level evidence for each finding
      * @since 0.6.0
      */
     public static String formatCheckFailure(

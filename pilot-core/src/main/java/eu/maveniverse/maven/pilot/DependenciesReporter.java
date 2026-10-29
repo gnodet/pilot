@@ -49,6 +49,12 @@ public final class DependenciesReporter {
     private static final int VERBOSE_MAX_CLASSES = 3;
 
     /**
+     * Maximum number of member names shown per class in verbose mode.
+     * Additional members are summarised as "{@code , …}".
+     */
+    private static final int VERBOSE_MAX_MEMBERS = 3;
+
+    /**
      * Format a text report of dependency findings.
      */
     public static String formatFindings(
@@ -195,9 +201,9 @@ public final class DependenciesReporter {
             if (members == null || members.isEmpty()) {
                 sb.append("      uses: ").append(cls).append("\n");
             } else {
-                // Show at most 3 member names inline to keep the line readable
-                List<String> displayMembers = members.size() > 3 ? members.subList(0, 3) : members;
-                String memberSuffix = members.size() > 3 ? ", …" : "";
+                List<String> displayMembers =
+                        members.size() > VERBOSE_MAX_MEMBERS ? members.subList(0, VERBOSE_MAX_MEMBERS) : members;
+                String memberSuffix = members.size() > VERBOSE_MAX_MEMBERS ? ", …" : "";
                 sb.append("      uses: ")
                         .append(cls)
                         .append(" (")

@@ -222,7 +222,7 @@ public class DependenciesMojo extends AbstractMojo {
      * When {@code true}, include class-level evidence in the report output for each finding:
      * <ul>
      *   <li><b>Unused declared</b>: a note that no bytecode references were found</li>
-     *   <li><b>Used transitive / test-scoped declared</b>: the project classes that reference this dependency</li>
+     *   <li><b>Used transitive / test-scoped declared</b>: the dependency classes referenced by the project (and the members called on each)</li>
      * </ul>
      *
      * <p>Has no effect on the {@code fix} action.</p>
@@ -689,6 +689,7 @@ public class DependenciesMojo extends AbstractMojo {
                 var testDep = new DependenciesTui.DepEntry(
                         dep.groupId, dep.artifactId, dep.classifier, dep.version, "test", false);
                 testDep.usageStatus = dep.usageStatus;
+                testDep.usedMembers = dep.usedMembers;
                 usedTransitive.add(testDep);
             }
         }

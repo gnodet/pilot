@@ -93,8 +93,8 @@ public final class DependenciesReporter {
      * <p>When {@code verbose=true}, each finding is annotated with class-level evidence:</p>
      * <ul>
      *   <li><b>Unused declared</b>: "{@code no classes from this artifact are referenced in compiled bytecode}"</li>
-     *   <li><b>Test-scoped declared</b>: the project classes that reference this dependency (from test bytecode)</li>
-     *   <li><b>Used transitive</b>: the project classes that reference this dependency</li>
+     *   <li><b>Test-scoped declared</b>: the dependency classes referenced from test bytecode (and the members called on each)</li>
+     *   <li><b>Used transitive</b>: the dependency classes referenced by the project (and the members called on each)</li>
      * </ul>
      *
      * @param unusedDeclared     declared dependencies confirmed unused (can be removed)

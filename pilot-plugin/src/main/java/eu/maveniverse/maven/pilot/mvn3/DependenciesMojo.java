@@ -467,6 +467,13 @@ public class DependenciesMojo extends AbstractMojo {
                         testRefsAvailable);
         applyUsageStatus(declared, transitive, usage);
 
+        // Populate class-level detail fields (usedMembers, totalClasses, spiServices) when verbose
+        // output is requested. This is normally done only by the TUI path; we do it here so that
+        // the non-interactive report can show evidence for each finding.
+        if (verbose) {
+            PilotEngine.populateDepDetails(declared, transitive, classIndex, gaToJar, mainScan, testScan);
+        }
+
         executeNonInteractive(proj, declared, transitive, gaToVersion, ancestorManagedGAs, fixLogger);
     }
 

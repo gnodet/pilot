@@ -173,19 +173,38 @@ public final class DependenciesReporter {
     }
 
     /**
-     * Append verbose class-level evidence for a dependency that has referencing classes.
-     * Shows up to {@link #VERBOSE_MAX_CLASSES} referencing class names; remaining are summarised.
+     * Append verbose class-level evidence for a dependency that references specific classes.
+     * Prints the dependency classes that are directly referenced in the project's bytecode,
+     * along with the member names (methods/fields) accessed on each class.
+     * Shows up to {@link #VERBOSE_MAX_CLASSES} entries; remaining are summarised as "and N more".
+     *
+     * <p>{@code dep.usedMembers} maps dependency class names to the set of member names
+     * (methods and fields) called or accessed on that class by the project's bytecode.</p>
      */
     private static void appendVerboseEvidence(StringBuilder sb, DependenciesTui.DepEntry dep) {
         if (dep.usedMembers == null || dep.usedMembers.isEmpty()) {
             return;
         }
-        var classes = dep.usedMembers.keySet();
-        int total = classes.size();
+        var entries = dep.usedMembers.entrySet();
+        int total = entries.size();
         int shown = 0;
-        for (String cls : classes) {
+        for (var entry : entries) {
             if (shown >= VERBOSE_MAX_CLASSES) break;
-            sb.append("      referenced by: ").append(cls).append("\n");
+            String cls = entry.getKey();
+            List<String> members = entry.getValue();
+            if (members == null || members.isEmpty()) {
+                sb.append("      uses: ").append(cls).append("\n");
+            } else {
+                // Show at most 3 member names inline to keep the line readable
+                List<String> displayMembers = members.size() > 3 ? members.subList(0, 3) : members;
+                String memberSuffix = members.size() > 3 ? ", …" : "";
+                sb.append("      uses: ")
+                        .append(cls)
+                        .append(" (")
+                        .append(String.join(", ", displayMembers))
+                        .append(memberSuffix)
+                        .append(")\n");
+            }
             shown++;
         }
         if (total > VERBOSE_MAX_CLASSES) {

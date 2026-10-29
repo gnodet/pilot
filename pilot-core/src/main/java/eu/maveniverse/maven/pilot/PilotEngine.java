@@ -319,7 +319,7 @@ public class PilotEngine {
      * Populate detail fields (totalClasses, usedMembers, spiServices) on each DepEntry
      * using bytecode scan results and the class index.
      */
-    private static void populateDepDetails(
+    public static void populateDepDetails(
             List<DependenciesTui.DepEntry> declared,
             List<DependenciesTui.DepEntry> transitive,
             Map<String, String> classIndex,

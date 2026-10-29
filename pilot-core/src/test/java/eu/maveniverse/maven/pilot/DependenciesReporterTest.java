@@ -667,25 +667,29 @@ class DependenciesReporterTest {
     }
 
     @Test
-    void formatFindingsVerboseUsedTransitiveShowsReferencingClass() {
+    void formatFindingsVerboseUsedTransitiveShowsDepClassWithMembers() {
+        // usedMembers keys = dep class names; values = member names called on that class
         var dep = new DependenciesTui.DepEntry("com.transitive", "lib", "", "2.0", "compile", false);
-        dep.usedMembers = Map.of(
-                "com.example.MyService", List.of("doSomething"),
-                "com.example.OtherClass", List.of("helper"));
+        dep.usedMembers = new java.util.LinkedHashMap<>();
+        dep.usedMembers.put("com.transitive.lib.ServiceClass", List.of("execute"));
+        dep.usedMembers.put("com.transitive.lib.HelperClass", List.of("build"));
 
         String output = DependenciesReporter.formatFindings(List.of(), List.of(), List.of(dep), List.of(), true);
 
-        assertThat(output).contains("com.transitive:lib").contains("referenced by:");
+        assertThat(output)
+                .contains("com.transitive:lib")
+                .contains("uses: com.transitive.lib.ServiceClass")
+                .contains("execute");
     }
 
     @Test
     void formatFindingsVerboseUsedTransitiveTruncatesAt3Classes() {
         var dep = new DependenciesTui.DepEntry("com.transitive", "lib", "", "2.0", "compile", false);
-        dep.usedMembers = Map.of(
-                "com.example.ClassA", List.of("m1"),
-                "com.example.ClassB", List.of("m2"),
-                "com.example.ClassC", List.of("m3"),
-                "com.example.ClassD", List.of("m4"));
+        dep.usedMembers = new java.util.LinkedHashMap<>();
+        dep.usedMembers.put("com.transitive.ClassA", List.of("m1"));
+        dep.usedMembers.put("com.transitive.ClassB", List.of("m2"));
+        dep.usedMembers.put("com.transitive.ClassC", List.of("m3"));
+        dep.usedMembers.put("com.transitive.ClassD", List.of("m4"));
 
         String output = DependenciesReporter.formatFindings(List.of(), List.of(), List.of(dep), List.of(), true);
 
@@ -695,11 +699,11 @@ class DependenciesReporterTest {
     @Test
     void formatFindingsVerboseFalseNoEvidenceShown() {
         var dep = new DependenciesTui.DepEntry("com.transitive", "lib", "", "2.0", "compile", false);
-        dep.usedMembers = Map.of("com.example.MyService", List.of("doSomething"));
+        dep.usedMembers = Map.of("com.transitive.SomeClass", List.of("doSomething"));
 
         String output = DependenciesReporter.formatFindings(List.of(), List.of(), List.of(dep), List.of(), false);
 
-        assertThat(output).contains("com.transitive:lib").doesNotContain("referenced by:");
+        assertThat(output).contains("com.transitive:lib").doesNotContain("uses:");
     }
 
     @Test
@@ -710,16 +714,20 @@ class DependenciesReporterTest {
 
         String output = DependenciesReporter.formatFindings(List.of(), List.of(), List.of(dep), List.of(), true);
 
-        assertThat(output).contains("com.transitive:lib").doesNotContain("referenced by:");
+        assertThat(output).contains("com.transitive:lib").doesNotContain("uses:");
     }
 
     @Test
     void formatFindingsVerboseTestScopedDeclaredShowsEvidence() {
         var dep = new DependenciesTui.DepEntry("com.example", "compile-but-test-only", "", "1.0", "compile", true);
-        dep.usedMembers = Map.of("com.example.MyTest", List.of("testMethod"));
+        // usedMembers key = dep class name referenced from tests
+        dep.usedMembers = Map.of("com.example.dep.SomeApi", List.of("testMethod"));
 
         String output = DependenciesReporter.formatFindings(List.of(), List.of(dep), List.of(), List.of(), true);
 
-        assertThat(output).contains("com.example:compile-but-test-only").contains("referenced by: com.example.MyTest");
+        assertThat(output)
+                .contains("com.example:compile-but-test-only")
+                .contains("uses: com.example.dep.SomeApi")
+                .contains("testMethod");
     }
 }

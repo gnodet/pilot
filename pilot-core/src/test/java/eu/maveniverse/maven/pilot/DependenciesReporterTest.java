@@ -652,4 +652,82 @@ class DependenciesReporterTest {
         // Only the "Updated" message may be logged (pre-existing write-always behaviour)
         assertThat(logs).noneMatch(l -> l.contains("Narrowed"));
     }
+
+    // -- verbose mode --
+
+    @Test
+    void formatFindingsVerboseUnusedDeclaredShowsNoBytecodeNote() {
+        var dep = new DependenciesTui.DepEntry("com.example", "unused-lib", "", "1.0", "compile", true);
+
+        String output = DependenciesReporter.formatFindings(List.of(dep), List.of(), List.of(), List.of(), true);
+
+        assertThat(output)
+                .contains("com.example:unused-lib")
+                .contains("no classes from this artifact are referenced in compiled bytecode");
+    }
+
+    @Test
+    void formatFindingsVerboseUsedTransitiveShowsDepClassWithMembers() {
+        // usedMembers keys = dep class names; values = member names called on that class
+        var dep = new DependenciesTui.DepEntry("com.transitive", "lib", "", "2.0", "compile", false);
+        dep.usedMembers = new java.util.LinkedHashMap<>();
+        dep.usedMembers.put("com.transitive.lib.ServiceClass", List.of("execute"));
+        dep.usedMembers.put("com.transitive.lib.HelperClass", List.of("build"));
+
+        String output = DependenciesReporter.formatFindings(List.of(), List.of(), List.of(dep), List.of(), true);
+
+        assertThat(output)
+                .contains("com.transitive:lib")
+                .contains("uses: com.transitive.lib.ServiceClass")
+                .contains("execute");
+    }
+
+    @Test
+    void formatFindingsVerboseUsedTransitiveTruncatesAt3Classes() {
+        var dep = new DependenciesTui.DepEntry("com.transitive", "lib", "", "2.0", "compile", false);
+        dep.usedMembers = new java.util.LinkedHashMap<>();
+        dep.usedMembers.put("com.transitive.ClassA", List.of("m1"));
+        dep.usedMembers.put("com.transitive.ClassB", List.of("m2"));
+        dep.usedMembers.put("com.transitive.ClassC", List.of("m3"));
+        dep.usedMembers.put("com.transitive.ClassD", List.of("m4"));
+
+        String output = DependenciesReporter.formatFindings(List.of(), List.of(), List.of(dep), List.of(), true);
+
+        assertThat(output).contains("com.transitive:lib").contains("and 1 more");
+    }
+
+    @Test
+    void formatFindingsVerboseFalseNoEvidenceShown() {
+        var dep = new DependenciesTui.DepEntry("com.transitive", "lib", "", "2.0", "compile", false);
+        dep.usedMembers = Map.of("com.transitive.SomeClass", List.of("doSomething"));
+
+        String output = DependenciesReporter.formatFindings(List.of(), List.of(), List.of(dep), List.of(), false);
+
+        assertThat(output).contains("com.transitive:lib").doesNotContain("uses:");
+    }
+
+    @Test
+    void formatFindingsVerboseNoUsedMembersShowsNoEvidence() {
+        // A used-transitive dep with no usedMembers (e.g. class detected via class index only, no member refs)
+        var dep = new DependenciesTui.DepEntry("com.transitive", "lib", "", "2.0", "compile", false);
+        // usedMembers is null
+
+        String output = DependenciesReporter.formatFindings(List.of(), List.of(), List.of(dep), List.of(), true);
+
+        assertThat(output).contains("com.transitive:lib").doesNotContain("uses:");
+    }
+
+    @Test
+    void formatFindingsVerboseTestScopedDeclaredShowsEvidence() {
+        var dep = new DependenciesTui.DepEntry("com.example", "compile-but-test-only", "", "1.0", "compile", true);
+        // usedMembers key = dep class name referenced from tests
+        dep.usedMembers = Map.of("com.example.dep.SomeApi", List.of("testMethod"));
+
+        String output = DependenciesReporter.formatFindings(List.of(), List.of(dep), List.of(), List.of(), true);
+
+        assertThat(output)
+                .contains("com.example:compile-but-test-only")
+                .contains("uses: com.example.dep.SomeApi")
+                .contains("testMethod");
+    }
 }

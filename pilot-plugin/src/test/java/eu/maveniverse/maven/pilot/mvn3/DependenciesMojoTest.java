@@ -464,6 +464,34 @@ class DependenciesMojoTest {
                 .hasMessageContaining("com.example:own-lib");
     }
 
+    @Test
+    void executeNonInteractive_verbose_includesClassEvidence(@TempDir Path tmp) throws Exception {
+        // Regression guard for the original Bug 1: executeForProject must call populateDepDetails
+        // before executeNonInteractive so verbose report output contains class evidence.
+        // This test bypasses executeForProject and directly pre-populates usedMembers to verify
+        // that executeNonInteractive → formatFindings(verbose=true) surfaces class evidence when
+        // the data is present.
+        var mojo = new DependenciesMojo(null);
+        MojoTestHelper.setField(mojo, "action", "report");
+        MojoTestHelper.setField(mojo, "verbose", true);
+
+        // A used transitive dep whose usedMembers is pre-populated (as populateDepDetails would do)
+        var dep = new DependenciesTui.DepEntry("com.transitive", "lib", "", "1.0", "compile", false);
+        dep.usageStatus = DependencyUsageAnalyzer.UsageStatus.USED;
+        var usedMembers = new java.util.LinkedHashMap<String, java.util.List<String>>();
+        usedMembers.put("com.transitive.lib.ServiceClass", java.util.List.of("execute", "init"));
+        dep.usedMembers = usedMembers;
+
+        MavenProject proj = tempProject(tmp);
+        var log = new RecordingLog();
+        mojo.setLog(log);
+        mojo.executeNonInteractive(proj, List.of(), List.of(dep), Map.of());
+
+        // Verbose output must contain the dependency class name and at least one member
+        assertThat(log.warnings())
+                .anyMatch(w -> w.contains("com.transitive.lib.ServiceClass") && w.contains("execute"));
+    }
+
     // --- executeForProject guard ---
 
     @Test

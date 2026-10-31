@@ -318,8 +318,15 @@ public class PilotEngine {
     /**
      * Populate detail fields (totalClasses, usedMembers, spiServices) on each DepEntry
      * using bytecode scan results and the class index.
+     *
+     * @param declared    declared dependency entries to populate
+     * @param transitive  transitive dependency entries to populate
+     * @param classIndex  map from binary class name to {@code groupId:artifactId} key
+     * @param gaToJar     map from {@code groupId:artifactId} key to the artifact JAR file
+     * @param mainScan    bytecode scan result for main (non-test) classes
+     * @param testScan    bytecode scan result for test classes
      */
-    private static void populateDepDetails(
+    public static void populateDepDetails(
             List<DependenciesTui.DepEntry> declared,
             List<DependenciesTui.DepEntry> transitive,
             Map<String, String> classIndex,

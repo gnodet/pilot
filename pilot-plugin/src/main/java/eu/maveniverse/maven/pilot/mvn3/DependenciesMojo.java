@@ -83,8 +83,10 @@ import org.eclipse.aether.resolution.DependencyResult;
  * <pre>
  * mvn package pilot:dependencies                                            # full analysis (recommended)
  * mvn package pilot:dependencies -Dpilot.showUndetermined=true             # also show undetermined
+ * mvn package pilot:dependencies -Dpilot.verbose=true                      # show class-level evidence
  * mvn package pilot:dependencies -Dpilot.action=check
  * mvn package pilot:dependencies -Dpilot.action=check -Dpilot.failOnUndetermined=true
+ * mvn package pilot:dependencies -Dpilot.action=check -Dpilot.verbose=true
  * mvn package pilot:dependencies -Dpilot.action=fix
  * mvn package pilot:dependencies -Dpilot.action=fix -Dpilot.maxIterations=1  # single pass
  * mvn compile pilot:dependencies -Dpilot.skipTestScope=true                # skip test-scope analysis
@@ -215,6 +217,20 @@ public class DependenciesMojo extends AbstractMojo {
      */
     @Parameter(property = "pilot.failOnUndetermined", defaultValue = "false")
     private boolean failOnUndetermined = false;
+
+    /**
+     * When {@code true}, include class-level evidence in the report output for each finding:
+     * <ul>
+     *   <li><b>Unused declared</b>: a note that no bytecode references were found</li>
+     *   <li><b>Used transitive / test-scoped declared</b>: the dependency classes referenced by the project (and the members called on each)</li>
+     * </ul>
+     *
+     * <p>Has no effect on the {@code fix} action.</p>
+     *
+     * @since 0.6.0
+     */
+    @Parameter(property = "pilot.verbose", defaultValue = "false")
+    private boolean verbose = false;
 
     private final RepositorySystem repoSystem;
 
@@ -451,6 +467,13 @@ public class DependenciesMojo extends AbstractMojo {
                         testRefsAvailable);
         applyUsageStatus(declared, transitive, usage);
 
+        // Populate class-level detail fields (usedMembers, totalClasses, spiServices) when verbose
+        // output is requested. This is normally done only by the TUI path; we do it here so that
+        // the non-interactive report can show evidence for each finding.
+        if (verbose && !"fix".equals(action)) {
+            PilotEngine.populateDepDetails(declared, transitive, classIndex, gaToJar, mainScan, testScan);
+        }
+
         executeNonInteractive(proj, declared, transitive, gaToVersion, ancestorManagedGAs, fixLogger);
     }
 
@@ -666,6 +689,7 @@ public class DependenciesMojo extends AbstractMojo {
                 var testDep = new DependenciesTui.DepEntry(
                         dep.groupId, dep.artifactId, dep.classifier, dep.version, "test", false);
                 testDep.usageStatus = dep.usageStatus;
+                testDep.usedMembers = dep.usedMembers;
                 usedTransitive.add(testDep);
             }
         }
@@ -714,18 +738,18 @@ public class DependenciesMojo extends AbstractMojo {
                         fixLogger != null ? fixLogger : getLog()::info);
             case "report" ->
                 getLog().warn(DependenciesReporter.formatFindings(
-                        unusedDeclared, testScopedDeclared, usedTransitive, visibleUndetermined));
+                        unusedDeclared, testScopedDeclared, usedTransitive, visibleUndetermined, verbose));
             default -> {
                 boolean hasIssues =
                         !unusedDeclared.isEmpty() || !usedTransitive.isEmpty() || !testScopedDeclared.isEmpty();
                 boolean hasUndetermined = !undetermined.isEmpty();
                 if (hasIssues || (hasUndetermined && failOnUndetermined)) {
                     throw new MojoFailureException(DependenciesReporter.formatCheckFailure(
-                            unusedDeclared, testScopedDeclared, usedTransitive, visibleUndetermined));
+                            unusedDeclared, testScopedDeclared, usedTransitive, visibleUndetermined, verbose));
                 } else if (!visibleUndetermined.isEmpty()) {
                     // undetermined visible but failOnUndetermined=false — warn only
                     getLog().warn(DependenciesReporter.formatFindings(
-                            unusedDeclared, testScopedDeclared, usedTransitive, visibleUndetermined));
+                            unusedDeclared, testScopedDeclared, usedTransitive, visibleUndetermined, verbose));
                 }
             }
         }

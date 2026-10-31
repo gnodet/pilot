@@ -43,11 +43,23 @@ public final class DependenciesReporter {
     private DependenciesReporter() {}
 
     /**
+     * Maximum number of referencing classes shown per dependency in verbose mode.
+     * Additional classes are summarised as "{@code and N more}".
+     */
+    private static final int VERBOSE_MAX_CLASSES = 3;
+
+    /**
+     * Maximum number of member names shown per class in verbose mode.
+     * Additional members are summarised as "{@code , …}".
+     */
+    private static final int VERBOSE_MAX_MEMBERS = 3;
+
+    /**
      * Format a text report of dependency findings.
      */
     public static String formatFindings(
             List<DependenciesTui.DepEntry> unusedDeclared, List<DependenciesTui.DepEntry> usedTransitive) {
-        return formatFindings(unusedDeclared, List.of(), usedTransitive, List.of());
+        return formatFindings(unusedDeclared, List.of(), usedTransitive, List.of(), false);
     }
 
     /**
@@ -61,7 +73,7 @@ public final class DependenciesReporter {
             List<DependenciesTui.DepEntry> unusedDeclared,
             List<DependenciesTui.DepEntry> usedTransitive,
             List<DependenciesTui.DepEntry> undetermined) {
-        return formatFindings(unusedDeclared, List.of(), usedTransitive, undetermined);
+        return formatFindings(unusedDeclared, List.of(), usedTransitive, undetermined, false);
     }
 
     /**
@@ -77,6 +89,33 @@ public final class DependenciesReporter {
             List<DependenciesTui.DepEntry> testScopedDeclared,
             List<DependenciesTui.DepEntry> usedTransitive,
             List<DependenciesTui.DepEntry> undetermined) {
+        return formatFindings(unusedDeclared, testScopedDeclared, usedTransitive, undetermined, false);
+    }
+
+    /**
+     * Format a text report of dependency findings, including test-scope narrowing and undetermined dependencies,
+     * with optional class-level evidence.
+     *
+     * <p>When {@code verbose=true}, each finding is annotated with class-level evidence:</p>
+     * <ul>
+     *   <li><b>Unused declared</b>: "{@code no classes from this artifact are referenced in compiled bytecode}"</li>
+     *   <li><b>Test-scoped declared</b>: the dependency classes referenced from test bytecode (and the members called on each)</li>
+     *   <li><b>Used transitive</b>: the dependency classes referenced by the project (and the members called on each)</li>
+     * </ul>
+     *
+     * @param unusedDeclared     declared dependencies confirmed unused (can be removed)
+     * @param testScopedDeclared declared dependencies used only in tests (scope should be narrowed to test)
+     * @param usedTransitive     transitive dependencies confirmed used (should be declared)
+     * @param undetermined       dependencies whose usage could not be determined
+     * @param verbose            when {@code true}, include class-level evidence for each finding
+     * @since 0.6.0
+     */
+    public static String formatFindings(
+            List<DependenciesTui.DepEntry> unusedDeclared,
+            List<DependenciesTui.DepEntry> testScopedDeclared,
+            List<DependenciesTui.DepEntry> usedTransitive,
+            List<DependenciesTui.DepEntry> undetermined,
+            boolean verbose) {
         StringBuilder sb = new StringBuilder();
         if (!unusedDeclared.isEmpty()) {
             sb.append("Unused declared dependenc");
@@ -86,6 +125,9 @@ public final class DependenciesReporter {
                 sb.append("  - ").append(dep.ga());
                 appendScope(sb, dep);
                 sb.append("\n");
+                if (verbose) {
+                    sb.append("      no classes from this artifact are referenced in compiled bytecode\n");
+                }
             }
         }
         if (!testScopedDeclared.isEmpty()) {
@@ -99,6 +141,9 @@ public final class DependenciesReporter {
                 sb.append("  - ").append(dep.ga());
                 appendScope(sb, dep);
                 sb.append("\n");
+                if (verbose) {
+                    appendVerboseEvidence(sb, dep);
+                }
             }
         }
         if (!usedTransitive.isEmpty()) {
@@ -112,6 +157,9 @@ public final class DependenciesReporter {
                 sb.append("  - ").append(dep.ga());
                 appendScope(sb, dep);
                 sb.append("\n");
+                if (verbose) {
+                    appendVerboseEvidence(sb, dep);
+                }
             }
         }
         if (!undetermined.isEmpty()) {
@@ -131,11 +179,51 @@ public final class DependenciesReporter {
     }
 
     /**
+     * Append verbose class-level evidence for a dependency that references specific classes.
+     * Prints the dependency classes that are directly referenced in the project's bytecode,
+     * along with the member names (methods/fields) accessed on each class.
+     * Shows up to {@link #VERBOSE_MAX_CLASSES} entries; remaining are summarised as "and N more".
+     *
+     * <p>{@code dep.usedMembers} maps dependency class names to the set of member names
+     * (methods and fields) called or accessed on that class by the project's bytecode.</p>
+     */
+    private static void appendVerboseEvidence(StringBuilder sb, DependenciesTui.DepEntry dep) {
+        if (dep.usedMembers == null || dep.usedMembers.isEmpty()) {
+            return;
+        }
+        var entries = dep.usedMembers.entrySet();
+        int total = entries.size();
+        int shown = 0;
+        for (var entry : entries) {
+            if (shown >= VERBOSE_MAX_CLASSES) break;
+            String cls = entry.getKey();
+            List<String> members = entry.getValue();
+            if (members == null || members.isEmpty()) {
+                sb.append("      uses: ").append(cls).append("\n");
+            } else {
+                List<String> displayMembers =
+                        members.size() > VERBOSE_MAX_MEMBERS ? members.subList(0, VERBOSE_MAX_MEMBERS) : members;
+                String memberSuffix = members.size() > VERBOSE_MAX_MEMBERS ? ", …" : "";
+                sb.append("      uses: ")
+                        .append(cls)
+                        .append(" (")
+                        .append(String.join(", ", displayMembers))
+                        .append(memberSuffix)
+                        .append(")\n");
+            }
+            shown++;
+        }
+        if (total > VERBOSE_MAX_CLASSES) {
+            sb.append("      and ").append(total - VERBOSE_MAX_CLASSES).append(" more\n");
+        }
+    }
+
+    /**
      * Format a check-failure message.
      */
     public static String formatCheckFailure(
             List<DependenciesTui.DepEntry> unusedDeclared, List<DependenciesTui.DepEntry> usedTransitive) {
-        return formatCheckFailure(unusedDeclared, List.of(), usedTransitive, List.of());
+        return formatCheckFailure(unusedDeclared, List.of(), usedTransitive, List.of(), false);
     }
 
     /**
@@ -145,7 +233,7 @@ public final class DependenciesReporter {
             List<DependenciesTui.DepEntry> unusedDeclared,
             List<DependenciesTui.DepEntry> usedTransitive,
             List<DependenciesTui.DepEntry> undetermined) {
-        return formatCheckFailure(unusedDeclared, List.of(), usedTransitive, undetermined);
+        return formatCheckFailure(unusedDeclared, List.of(), usedTransitive, undetermined, false);
     }
 
     /**
@@ -156,7 +244,27 @@ public final class DependenciesReporter {
             List<DependenciesTui.DepEntry> testScopedDeclared,
             List<DependenciesTui.DepEntry> usedTransitive,
             List<DependenciesTui.DepEntry> undetermined) {
-        String findings = formatFindings(unusedDeclared, testScopedDeclared, usedTransitive, undetermined);
+        return formatCheckFailure(unusedDeclared, testScopedDeclared, usedTransitive, undetermined, false);
+    }
+
+    /**
+     * Format a check-failure message, including test-scope narrowing and undetermined dependencies,
+     * with optional class-level evidence.
+     *
+     * @param unusedDeclared     declared dependencies confirmed unused (can be removed)
+     * @param testScopedDeclared declared dependencies used only in tests (scope should be narrowed to test)
+     * @param usedTransitive     transitive dependencies confirmed used (should be declared)
+     * @param undetermined       dependencies whose usage could not be determined
+     * @param verbose            when {@code true}, include class-level evidence for each finding
+     * @since 0.6.0
+     */
+    public static String formatCheckFailure(
+            List<DependenciesTui.DepEntry> unusedDeclared,
+            List<DependenciesTui.DepEntry> testScopedDeclared,
+            List<DependenciesTui.DepEntry> usedTransitive,
+            List<DependenciesTui.DepEntry> undetermined,
+            boolean verbose) {
+        String findings = formatFindings(unusedDeclared, testScopedDeclared, usedTransitive, undetermined, verbose);
         boolean hasRealIssues = !unusedDeclared.isEmpty() || !usedTransitive.isEmpty() || !testScopedDeclared.isEmpty();
         if (hasRealIssues) {
             return findings

@@ -149,9 +149,15 @@ public class PluginsTui extends ToolPanel {
     private final UpdatesTui.VersionResolver versionResolver;
     /** Shared POM edit session for the current project — null when no project path is available. */
     private PomEditSession session;
+    /**
+     * Per-path PomEditSession cache for multi-module updates.
+     * Reusing a session across multiple 'u' presses on the same POM preserves undo history
+     * and change-log entries instead of discarding them after each save.
+     */
+    private final Map<Path, PomEditSession> sessionsByPom = new LinkedHashMap<>();
 
     final ExecutorService httpPool = PilotUtil.newHttpPool();
-    private final TableState tableState = new TableState();
+    final TableState tableState = new TableState();
     private final TableState detailTableState = new TableState();
 
     private View view = View.PLUGINS;
@@ -241,22 +247,23 @@ public class PluginsTui extends ToolPanel {
         PluginEntry entry = updates.get(sel);
         if (!entry.hasUpdate()) return;
 
-        // Resolve the edit session: prefer the entry's own pomPath (correct for
-        // multi-module builds); fall back to the shared root session.
-        PomEditSession editSession;
-        if (entry.pomPath != null && Files.isRegularFile(entry.pomPath)) {
-            editSession = new PomEditSession(entry.pomPath);
-        } else if (session != null) {
-            editSession = session;
-        } else {
-            statusText = "Cannot apply: no POM session available";
-            return;
-        }
-
         String newVersion = entry.newestVersion;
         Coordinates coords = Coordinates.of(entry.groupId, entry.artifactId, newVersion);
 
         try {
+            // Resolve the edit session inside the try so constructor failures update statusText.
+            // Reuse cached sessions per POM path so undo history and change-log entries persist
+            // across multiple 'u' presses on the same module.
+            PomEditSession editSession;
+            if (entry.pomPath != null && Files.isRegularFile(entry.pomPath)) {
+                editSession = sessionsByPom.computeIfAbsent(entry.pomPath, PomEditSession::new);
+            } else if (session != null) {
+                editSession = session;
+            } else {
+                statusText = "Cannot apply: no POM session available";
+                return;
+            }
+
             editSession.beforeMutation();
             boolean updated;
             if (entry.profileId != null) {
@@ -269,11 +276,12 @@ public class PluginsTui extends ToolPanel {
                 updated = editSession.editor().plugins().updatePlugin(false, coords);
             }
             if (updated) {
+                // Record the change before save() — save() clears the change list.
+                String old = entry.version;
+                editSession.recordChange(
+                        PomEditSession.ChangeType.MODIFY, "plugin", entry.ga(), old + " → " + newVersion, "u");
                 PomEditSession.SaveResult result = editSession.save();
                 if (result.success()) {
-                    String old = entry.version;
-                    editSession.recordChange(
-                            PomEditSession.ChangeType.MODIFY, "plugin", entry.ga(), old + " → " + newVersion, "u");
                     entry.version = newVersion;
                     updates.remove(sel.intValue());
                     if (sel > 0 && sel >= updates.size()) tableState.select(sel - 1);
@@ -285,6 +293,8 @@ public class PluginsTui extends ToolPanel {
                 statusText = "Plugin not found in POM (may be inherited or property-managed)";
             }
         } catch (DomTripException e) {
+            statusText = "Apply failed: " + e.getMessage();
+        } catch (IllegalStateException e) {
             statusText = "Apply failed: " + e.getMessage();
         }
     }

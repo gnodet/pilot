@@ -208,8 +208,9 @@ class MojoHelperTest {
         mp.setGroupId("com.example");
         mp.setArtifactId("app");
         mp.setVersion("1.0");
-        // toPilotProject calls mp.getOriginalModel() — must not be null
-        mp.setOriginalModel(new org.apache.maven.model.Model());
+        // toPilotProject calls mp.getOriginalModel() — mirror the effective model so that
+        // mp.setBuild() is visible via both getOriginalModel().getBuild() and getBuild().
+        mp.setOriginalModel(mp.getModel());
         return mp;
     }
 

@@ -264,9 +264,12 @@ public final class MojoHelper {
 
     private static List<PilotProject.Plugin> extractPlugins(MavenProject mp) {
         List<PilotProject.Plugin> result = new ArrayList<>();
-        // Root-level build plugins
-        if (mp.getBuildPlugins() != null) {
-            mp.getBuildPlugins().stream().map(MojoHelper::toPilotPlugin).forEach(result::add);
+        // Root-level build plugins — source from the original (file) model, not the effective model.
+        // mp.getBuildPlugins() uses the effective model which includes active-profile plugins (merged),
+        // which would duplicate plugins added by the getActiveProfiles() loop below and shadow their profileId.
+        org.apache.maven.model.Build origBuild = mp.getOriginalModel().getBuild();
+        if (origBuild != null && origBuild.getPlugins() != null) {
+            origBuild.getPlugins().stream().map(MojoHelper::toPilotPlugin).forEach(result::add);
         }
         // Profile-scoped build plugins — iterate active profiles only to exclude
         // plugins from profiles whose activation conditions are not satisfied.

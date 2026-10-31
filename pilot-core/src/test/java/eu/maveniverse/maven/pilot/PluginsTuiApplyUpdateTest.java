@@ -166,8 +166,8 @@ class PluginsTuiApplyUpdateTest {
      * objects and never matches — leaving the entry in the list.  After the fix,
      * {@code updates.remove(sel.intValue())} removes by index.
      *
-     * <p>We set up two update entries, apply the second one (index 1), and verify that
-     * exactly one entry remains (the first) — not two (the object-remove no-op).</p>
+     * <p>We set up two update entries, apply the first one (index 0), and verify that
+     * exactly one entry remains (the other) — not two (the object-remove no-op).</p>
      */
     @Test
     void applyUpdateRemovesEntryByIndex() throws IOException {
@@ -204,7 +204,7 @@ class PluginsTuiApplyUpdateTest {
         tui.applyFilter();
         assertThat(tui.updates).hasSize(2);
 
-        // Select index 1 (second entry) and apply
+        // Selection stays at default index 0 (no DOWN pressed); apply it
         tui.setActiveSubView(2);
         tui.handleKeyEvent(KeyEvent.ofChar('u')); // applies index 0 (first entry)
 
@@ -521,7 +521,8 @@ class PluginsTuiApplyUpdateTest {
         // Applying last entry removes it; selection should decrement to 0
         tui.handleKeyEvent(KeyEvent.ofChar('u'));
         assertThat(tui.updates).hasSize(1);
-        // Selection must not be out of bounds (should be 0)
+        // Selection must have decremented to 0 (not out of bounds)
+        assertThat(tui.tableState.selected()).isEqualTo(0);
         assertThat(tui.statusText).contains("→");
     }
 }

@@ -547,9 +547,11 @@ public class PilotMain {
 
     private static List<PilotProject.Plugin> extractPlugins(Model effectiveModel, Model fileModel) {
         List<PilotProject.Plugin> result = new ArrayList<>();
-        // Root-level build plugins from the effective model (activation already applied)
-        if (effectiveModel.getBuild() != null && effectiveModel.getBuild().getPlugins() != null) {
-            effectiveModel.getBuild().getPlugins().stream()
+        // Root-level build plugins — source from the file model, not the effective model.
+        // effectiveModel.getBuild().getPlugins() includes active-profile plugins (flattened),
+        // which would duplicate plugins added by the profile loop below and shadow their profileId.
+        if (fileModel.getBuild() != null && fileModel.getBuild().getPlugins() != null) {
+            fileModel.getBuild().getPlugins().stream()
                     .map(PilotMain::modelPluginToPilotPlugin)
                     .forEach(result::add);
         }

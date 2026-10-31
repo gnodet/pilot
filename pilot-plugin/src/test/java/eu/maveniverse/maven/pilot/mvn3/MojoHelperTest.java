@@ -427,4 +427,60 @@ class MojoHelperTest {
         PilotProject pp = MojoHelper.toPilotProject(mp, new IdentityHashMap<>());
         assertThat(pp.getManagedPlugins()).isEmpty();
     }
+
+    /**
+     * When a root-level managed plugin declares its version as a property expression
+     * (e.g. {@code ${compiler.version}}), the original model retains that expression
+     * literally.  {@code VersionComparator} cannot parse property references and treats
+     * them as {@code 0.0.0}, causing spurious update suggestions.
+     *
+     * <p>{@code extractManagedPlugins} resolves property expressions by looking up the
+     * same GA in the effective plugin management (which has already interpolated
+     * properties).  The resolved concrete version is used for comparison, while the raw
+     * property reference in the POM is left untouched for the domtrip editor.</p>
+     *
+     * <p><b>Test-model limitation:</b> In a real Maven build, {@code getModel()} (effective)
+     * and {@code getOriginalModel()} are distinct objects.  Here we construct them separately
+     * so that the effective build contains the concrete version while the original retains
+     * the property expression.</p>
+     */
+    @Test
+    void extractManagedPlugins_propertyVersionIsResolvedFromEffectiveModel() {
+        // Original (file) model: version is a property expression
+        Plugin origManaged = new Plugin();
+        origManaged.setGroupId("org.apache.maven.plugins");
+        origManaged.setArtifactId("maven-compiler-plugin");
+        origManaged.setVersion("${compiler.version}");
+        PluginManagement origPM = new PluginManagement();
+        origPM.addPlugin(origManaged);
+        org.apache.maven.model.Build origBuild = new org.apache.maven.model.Build();
+        origBuild.setPluginManagement(origPM);
+        org.apache.maven.model.Model origModel = new org.apache.maven.model.Model();
+        origModel.setBuild(origBuild);
+
+        // Effective model: property already resolved to a concrete version
+        Plugin effManaged = new Plugin();
+        effManaged.setGroupId("org.apache.maven.plugins");
+        effManaged.setArtifactId("maven-compiler-plugin");
+        effManaged.setVersion("3.11.0");
+        PluginManagement effPM = new PluginManagement();
+        effPM.addPlugin(effManaged);
+        org.apache.maven.model.Build effBuild = new org.apache.maven.model.Build();
+        effBuild.setPluginManagement(effPM);
+
+        MavenProject mp = new MavenProject();
+        mp.setGroupId("com.example");
+        mp.setArtifactId("app");
+        mp.setVersion("1.0");
+        mp.setBuild(effBuild); // effective model's build (getPluginManagement() reads this)
+        mp.setOriginalModel(origModel); // original model retains property expression
+
+        PilotProject pp = MojoHelper.toPilotProject(mp, new IdentityHashMap<>());
+
+        assertThat(pp.getManagedPlugins()).hasSize(1);
+        PilotProject.Plugin result = pp.getManagedPlugins().get(0);
+        // The resolved version is used for comparison — not the raw property expression
+        assertThat(result.version()).isEqualTo("3.11.0");
+        assertThat(result.profileId()).isNull();
+    }
 }

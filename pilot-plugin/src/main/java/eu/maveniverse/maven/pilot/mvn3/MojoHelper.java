@@ -22,6 +22,7 @@ import eu.maveniverse.maven.pilot.*;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -290,12 +291,28 @@ public final class MojoHelper {
         // mp.getPluginManagement() delegates to the effective model which already has active-profile
         // PM merged in. The getActiveProfiles() loop below would then add the same entries again
         // with profileId set — the identical duplicate/shadow issue that extractPlugins had.
+        //
+        // However, the original model retains raw property expressions (e.g. ${compiler.version})
+        // as version strings.  VersionComparator cannot parse these and treats them as 0.0.0,
+        // producing spurious update suggestions.  We therefore build a GA → resolvedVersion lookup
+        // from the effective plugin management (which has already resolved properties) and use it
+        // to supply a concrete version to PluginEntry for comparison purposes.  The domtrip editor
+        // locates each plugin by GA when applying an update, so the raw property expression in the
+        // POM is preserved correctly.
+        Map<String, String> effectivePmVersions = new HashMap<>();
+        if (mp.getPluginManagement() != null && mp.getPluginManagement().getPlugins() != null) {
+            for (Plugin p : mp.getPluginManagement().getPlugins()) {
+                if (p.getVersion() != null) {
+                    effectivePmVersions.put(p.getGroupId() + ":" + p.getArtifactId(), p.getVersion());
+                }
+            }
+        }
         org.apache.maven.model.Build origBuild = mp.getOriginalModel().getBuild();
         if (origBuild != null
                 && origBuild.getPluginManagement() != null
                 && origBuild.getPluginManagement().getPlugins() != null) {
             origBuild.getPluginManagement().getPlugins().stream()
-                    .map(MojoHelper::toPilotPlugin)
+                    .map(p -> toPilotPluginResolved(p, null, effectivePmVersions))
                     .forEach(result::add);
         }
         // Profile-scoped plugin management — active profiles only.
@@ -314,6 +331,22 @@ public final class MojoHelper {
 
     private static PilotProject.Plugin toPilotPlugin(Plugin plugin) {
         return toPilotPluginWithProfile(plugin, null);
+    }
+
+    private static PilotProject.Plugin toPilotPluginResolved(
+            Plugin plugin, String profileId, Map<String, String> resolvedVersions) {
+        String version = plugin.getVersion();
+        if (version != null && version.startsWith("${")) {
+            String resolved = resolvedVersions.get(plugin.getGroupId() + ":" + plugin.getArtifactId());
+            if (resolved != null && !resolved.startsWith("${")) {
+                version = resolved;
+            }
+        }
+        List<PilotProject.Dep> deps = plugin.getDependencies() != null
+                ? plugin.getDependencies().stream().map(MojoHelper::toPilotDep).toList()
+                : List.of();
+        return new PilotProject.Plugin(
+                plugin.getGroupId(), plugin.getArtifactId(), version, deps, List.of(), profileId);
     }
 
     private static PilotProject.Plugin toPilotPluginWithProfile(Plugin plugin, String profileId) {

@@ -296,9 +296,7 @@ public class PluginsTui extends ToolPanel {
             } else {
                 statusText = "Plugin not found in POM (may be inherited or property-managed)";
             }
-        } catch (DomTripException e) {
-            statusText = "Apply failed: " + e.getMessage();
-        } catch (IllegalStateException e) {
+        } catch (DomTripException | IllegalStateException e) {
             statusText = "Apply failed: " + e.getMessage();
         }
     }

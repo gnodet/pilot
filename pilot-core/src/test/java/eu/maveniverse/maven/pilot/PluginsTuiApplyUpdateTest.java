@@ -522,7 +522,79 @@ class PluginsTuiApplyUpdateTest {
         tui.handleKeyEvent(KeyEvent.ofChar('u'));
         assertThat(tui.updates).hasSize(1);
         // Selection must have decremented to 0 (not out of bounds)
-        assertThat(tui.tableState.selected()).isEqualTo(0);
+        assertThat(tui.tableState.selected()).isZero();
         assertThat(tui.statusText).contains("→");
+    }
+
+    /**
+     * A plugin declared exclusively in {@code <pluginManagement>} (not in {@code <build><plugins>})
+     * must be updated via {@code updateManagedPlugin}, not {@code updatePlugin}.  Before the fix,
+     * {@code applySelectedUpdate} always called {@code updatePlugin}, which searched
+     * {@code <build><plugins>} only and returned {@code false} for managed-only plugins —
+     * silently showing "Plugin not found in POM".
+     *
+     * <p>We write a POM with only a {@code <pluginManagement>} section, create a project with the
+     * plugin as a managed plugin ({@code entry.managed = true}), press {@code u}, and verify the
+     * POM's {@code <pluginManagement>} version is updated.</p>
+     */
+    @Test
+    void applyUpdateWritesToPluginManagement() throws IOException {
+        Path dir = subdir("managed");
+        Path pom = dir.resolve("pom.xml");
+        Files.writeString(pom, """
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>com.example</groupId>
+                  <artifactId>managed</artifactId>
+                  <version>1.0</version>
+                  <build>
+                    <pluginManagement>
+                      <plugins>
+                        <plugin>
+                          <groupId>org.apache.maven.plugins</groupId>
+                          <artifactId>maven-compiler-plugin</artifactId>
+                          <version>3.11.0</version>
+                        </plugin>
+                      </plugins>
+                    </pluginManagement>
+                  </build>
+                </project>
+                """);
+
+        // Plugin is in managedPlugins, not plugins — entry.managed will be true
+        PilotProject project = createProject(
+                "com.example",
+                "managed",
+                "1.0",
+                dir,
+                List.of(),
+                List.of(new PilotProject.Plugin("org.apache.maven.plugins", "maven-compiler-plugin", "3.11.0")));
+
+        PluginsTui tui = new PluginsTui(project, List.of(project), (g, a) -> List.of());
+
+        // The managed plugin should appear in tui.managed, not tui.plugins
+        assertThat(tui.managed).hasSize(1);
+        PluginsTui.PluginEntry entry = tui.managed.get(0);
+        assertThat(entry.managed).isTrue();
+        assertThat(entry.pomPath).isEqualTo(pom);
+
+        // Simulate a version update being available
+        entry.newestVersion = "3.14.0";
+        entry.updateType = VersionComparator.UpdateType.MINOR;
+        tui.loading = false;
+        tui.applyFilter();
+        assertThat(tui.updates).hasSize(1);
+        assertThat(tui.updates.get(0).managed).isTrue();
+
+        // Switch to Updates view and press 'u'
+        tui.setActiveSubView(2);
+        tui.handleKeyEvent(KeyEvent.ofChar('u'));
+
+        // Entry should be removed and the POM's pluginManagement version updated
+        assertThat(tui.updates).isEmpty();
+        assertThat(entry.version).isEqualTo("3.14.0");
+        String pomContent = Files.readString(pom);
+        assertThat(pomContent).contains("3.14.0");
+        assertThat(pomContent).contains("pluginManagement");
     }
 }

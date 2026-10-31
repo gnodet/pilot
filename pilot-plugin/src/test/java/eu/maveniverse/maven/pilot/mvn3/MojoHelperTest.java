@@ -327,6 +327,17 @@ class MojoHelperTest {
     /**
      * Active profile with plugin management — verifies extractManagedPlugins
      * picks up profile-scoped managed plugins with the correct profileId.
+     *
+     * <p><b>Test-model limitation:</b> {@code MavenProject.setActiveProfiles()} only sets the
+     * {@code activeProfiles} list field; it does <em>not</em> merge the profile's
+     * {@code &lt;pluginManagement&gt;} into the effective model's build (that merge is done by
+     * {@code DefaultProfileInjector} during a real Maven build). As a result,
+     * {@code mp.getPluginManagement()} in this test only sees the root PM set via
+     * {@code mp.setBuild()}, and the profile PM remains disjoint. The two sources never overlap
+     * here, so the test validates the profileId-tracking logic but does <em>not</em> reproduce
+     * the real-world duplicate that the fix targets (where the effective model already contains
+     * the merged profile PM before the profile loop runs). Integration tests with a real Maven
+     * session are needed to fully cover that scenario.</p>
      */
     @Test
     void extractManagedPlugins_activeProfilePluginManagementCarriesProfileId() {

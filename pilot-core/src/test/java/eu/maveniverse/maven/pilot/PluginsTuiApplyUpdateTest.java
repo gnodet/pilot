@@ -215,13 +215,13 @@ class PluginsTuiApplyUpdateTest {
     // ── recordChange is called after a successful update ─────────────────────
 
     /**
-     * Verifies that a successful {@code applySelectedUpdate()} records a MODIFY change
-     * in the PomEditSession so that change tracking and undo history are consistent.
+     * Verifies that a successful {@code applySelectedUpdate()} sets a status text containing
+     * the "old → new" version marker, confirming that the update went through and the
+     * {@code recordChange} + {@code save()} sequence completed without error.
      *
-     * <p>We read the change log from the session via the PluginEntry's pomPath.
-     * Since the session is created fresh inside applySelectedUpdate, we verify the
-     * side-effect: the status text contains the expected "old → new" marker (set only
-     * after recordChange returns, i.e. after save succeeds).</p>
+     * <p>Sessions are cached in {@code sessionsByPom}: a session for the entry's POM path is
+     * created on first use and reused on subsequent presses. The status text is set only on
+     * success, after {@code recordChange} and {@code save()} both succeed.</p>
      */
     @Test
     void applyUpdateSetsStatusTextAfterSuccessfulSave() throws IOException {

@@ -287,6 +287,8 @@ public class PluginsTui extends ToolPanel {
                     if (sel > 0 && sel >= updates.size()) tableState.select(sel - 1);
                     statusText = "Updated " + entry.ga() + ": " + old + " → " + newVersion;
                 } else {
+                    // Roll back the in-memory mutation so a retry starts from the original state.
+                    editSession.undoLast();
                     statusText = "Save failed: " + result.message();
                 }
             } else {

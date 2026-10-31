@@ -35,9 +35,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.apache.maven.api.DownloadedArtifact;
 import org.apache.maven.api.Session;
@@ -346,8 +348,9 @@ public class PilotMain {
             ModelBuilderResult effectiveResult = effectiveSession.build(effectiveBuilder.build());
             Model effectiveModel = effectiveResult.getEffectiveModel();
             Model fileModel = effectiveResult.getFileModel();
+            List<Profile> activeProfiles = effectiveResult.getActivePomProfiles();
 
-            PilotProject project = toPilotProject(effectiveModel, fileModel, modulePom);
+            PilotProject project = toPilotProject(effectiveModel, fileModel, activeProfiles, modulePom);
             if (effectiveModel.getParent() != null) {
                 String parentGa = effectiveModel.getParent().getGroupId() + ":"
                         + effectiveModel.getParent().getArtifactId();
@@ -441,8 +444,11 @@ public class PilotMain {
             }
             ModelBuilderResult parentResult = mbs.build(parentBuilder.build());
 
-            PilotProject parentProject =
-                    toPilotProject(parentResult.getEffectiveModel(), parentResult.getFileModel(), parentPom);
+            PilotProject parentProject = toPilotProject(
+                    parentResult.getEffectiveModel(),
+                    parentResult.getFileModel(),
+                    parentResult.getActivePomProfiles(),
+                    parentPom);
             projectsByGa.put(parentGa, parentProject);
             project.parent = parentProject;
 
@@ -479,7 +485,8 @@ public class PilotMain {
 
     // ── Model conversion ────────────────────────────────────────────────
 
-    static PilotProject toPilotProject(Model effectiveModel, Model fileModel, Path pomPath) {
+    static PilotProject toPilotProject(
+            Model effectiveModel, Model fileModel, List<Profile> activeProfiles, Path pomPath) {
         List<PilotProject.Dep> deps = effectiveModel.getDependencies() != null
                 ? effectiveModel.getDependencies().stream()
                         .map(PilotMain::modelDepToPilotDep)
@@ -540,27 +547,29 @@ public class PilotMain {
                 origProps,
                 outputDir,
                 testOutputDir);
-        pp.setPlugins(extractPlugins(effectiveModel, fileModel));
-        pp.setManagedPlugins(extractManagedPlugins(effectiveModel, fileModel));
+        pp.setPlugins(extractPlugins(fileModel, activeProfiles));
+        pp.setManagedPlugins(extractManagedPlugins(fileModel, activeProfiles));
         return pp;
     }
 
-    private static List<PilotProject.Plugin> extractPlugins(Model effectiveModel, Model fileModel) {
+    private static List<PilotProject.Plugin> extractPlugins(Model fileModel, List<Profile> activeProfiles) {
         List<PilotProject.Plugin> result = new ArrayList<>();
-        // Root-level build plugins — source from the file model, not the effective model.
-        // effectiveModel.getBuild().getPlugins() includes active-profile plugins (flattened),
-        // which would duplicate plugins added by the profile loop below and shadow their profileId.
+        // Root-level build plugins from the file model.
+        // Using fileModel (not the effective model) avoids pulling in active-profile plugins
+        // that Maven merges into effectiveModel.build.plugins — those would duplicate the
+        // entries added by the active-profile loop below, shadowing their profileId.
         if (fileModel.getBuild() != null && fileModel.getBuild().getPlugins() != null) {
             fileModel.getBuild().getPlugins().stream()
                     .map(PilotMain::modelPluginToPilotPlugin)
                     .forEach(result::add);
         }
-        // Profile-scoped build plugins — walk the file model profiles to preserve profileId.
-        // The effective model flattens active profile plugins into build.getPlugins(), losing
-        // the profile scope. Using the file model profiles is intentional here: the profile
-        // declarations in the file are what the domtrip editor targets with forProfile(id).
+        // Profile-scoped build plugins — active profiles only, to exclude plugins from
+        // profiles whose activation conditions are not satisfied in the current build.
+        Set<String> activeProfileIds =
+                activeProfiles.stream().map(Profile::getId).collect(Collectors.toSet());
         if (fileModel.getProfiles() != null) {
             for (Profile profile : fileModel.getProfiles()) {
+                if (!activeProfileIds.contains(profile.getId())) continue;
                 String profileId = profile.getId();
                 if (profile.getBuild() != null && profile.getBuild().getPlugins() != null) {
                     profile.getBuild().getPlugins().stream()
@@ -572,19 +581,25 @@ public class PilotMain {
         return result;
     }
 
-    private static List<PilotProject.Plugin> extractManagedPlugins(Model effectiveModel, Model fileModel) {
+    private static List<PilotProject.Plugin> extractManagedPlugins(Model fileModel, List<Profile> activeProfiles) {
         List<PilotProject.Plugin> result = new ArrayList<>();
-        // Root-level plugin management from the effective model
-        if (effectiveModel.getBuild() != null
-                && effectiveModel.getBuild().getPluginManagement() != null
-                && effectiveModel.getBuild().getPluginManagement().getPlugins() != null) {
-            effectiveModel.getBuild().getPluginManagement().getPlugins().stream()
+        // Root-level plugin management from the file model.
+        // Using fileModel avoids the same duplicate/shadow issue as extractPlugins: Maven merges
+        // active-profile PM into effectiveModel.build.pluginManagement; the profile loop below
+        // would then add the same entries again with profileId set.
+        if (fileModel.getBuild() != null
+                && fileModel.getBuild().getPluginManagement() != null
+                && fileModel.getBuild().getPluginManagement().getPlugins() != null) {
+            fileModel.getBuild().getPluginManagement().getPlugins().stream()
                     .map(PilotMain::modelPluginToPilotPlugin)
                     .forEach(result::add);
         }
-        // Profile-scoped plugin management — file model profiles only
+        // Profile-scoped plugin management — active profiles only.
+        Set<String> activeProfileIds =
+                activeProfiles.stream().map(Profile::getId).collect(Collectors.toSet());
         if (fileModel.getProfiles() != null) {
             for (Profile profile : fileModel.getProfiles()) {
+                if (!activeProfileIds.contains(profile.getId())) continue;
                 String profileId = profile.getId();
                 if (profile.getBuild() != null
                         && profile.getBuild().getPluginManagement() != null

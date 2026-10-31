@@ -286,9 +286,15 @@ public final class MojoHelper {
 
     private static List<PilotProject.Plugin> extractManagedPlugins(MavenProject mp) {
         List<PilotProject.Plugin> result = new ArrayList<>();
-        // Root-level plugin management
-        if (mp.getPluginManagement() != null && mp.getPluginManagement().getPlugins() != null) {
-            mp.getPluginManagement().getPlugins().stream()
+        // Root-level plugin management from the original (file) model, not the effective model.
+        // mp.getPluginManagement() delegates to the effective model which already has active-profile
+        // PM merged in. The getActiveProfiles() loop below would then add the same entries again
+        // with profileId set — the identical duplicate/shadow issue that extractPlugins had.
+        org.apache.maven.model.Build origBuild = mp.getOriginalModel().getBuild();
+        if (origBuild != null
+                && origBuild.getPluginManagement() != null
+                && origBuild.getPluginManagement().getPlugins() != null) {
+            origBuild.getPluginManagement().getPlugins().stream()
                     .map(MojoHelper::toPilotPlugin)
                     .forEach(result::add);
         }

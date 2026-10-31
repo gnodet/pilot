@@ -34,7 +34,7 @@ import org.junit.jupiter.api.io.TempDir;
  * Tests for {@code PluginsTui.applySelectedUpdate()} covering:
  * <ul>
  *   <li>Session resolves to the sub-module POM (not root) for multi-module builds.</li>
- *   <li>{@code recordChange} is called after a successful save.</li>
+ *   <li>{@code recordChange} is called before {@code save()} — {@code save()} clears the change list, so the record must be captured first.</li>
  *   <li>Entry removal uses the index overload ({@code remove(int)}) so the list shrinks correctly.</li>
  *   <li>Fallback to no-op when no session is available.</li>
  * </ul>

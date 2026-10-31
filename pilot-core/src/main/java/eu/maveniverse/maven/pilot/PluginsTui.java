@@ -267,13 +267,15 @@ public class PluginsTui extends ToolPanel {
             editSession.beforeMutation();
             boolean updated;
             if (entry.profileId != null) {
-                updated = editSession
-                        .editor()
-                        .plugins()
-                        .forProfile(entry.profileId)
-                        .updatePlugin(false, coords);
+                var profilePlugins = editSession.editor().plugins().forProfile(entry.profileId);
+                updated = entry.managed
+                        ? profilePlugins.updateManagedPlugin(false, coords)
+                        : profilePlugins.updatePlugin(false, coords);
             } else {
-                updated = editSession.editor().plugins().updatePlugin(false, coords);
+                var rootPlugins = editSession.editor().plugins();
+                updated = entry.managed
+                        ? rootPlugins.updateManagedPlugin(false, coords)
+                        : rootPlugins.updatePlugin(false, coords);
             }
             if (updated) {
                 // Record the change before save() — save() clears the change list.

@@ -292,13 +292,19 @@ public final class MojoHelper {
         // PM merged in. The getActiveProfiles() loop below would then add the same entries again
         // with profileId set — the identical duplicate/shadow issue that extractPlugins had.
         //
-        // However, the original model retains raw property expressions (e.g. ${compiler.version})
-        // as version strings.  VersionComparator cannot parse these and treats them as 0.0.0,
-        // producing spurious update suggestions.  We therefore build a GA → resolvedVersion lookup
-        // from the effective plugin management (which has already resolved properties) and use it
-        // to supply a concrete version to PluginEntry for comparison purposes.  The domtrip editor
-        // locates each plugin by GA when applying an update, so the raw property expression in the
-        // POM is preserved correctly.
+        // Root entries may declare versions as property expressions (e.g. ${compiler.version}).
+        // VersionComparator cannot parse these and treats them as 0.0.0, producing spurious update
+        // suggestions. We resolve them using the effective project properties (mp.getProperties()),
+        // which includes active-profile property definitions without conflating version overrides
+        // from profile-declared plugin-management entries (which is what mp.getPluginManagement()
+        // would give). The domtrip editor locates each plugin by GA when applying an update, so
+        // the raw property expression in the POM is preserved correctly.
+        //
+        // For profile-scoped PM entries we build a GA → resolvedVersion lookup from the effective
+        // plugin management (mp.getPluginManagement()), which already has active-profile PM merged
+        // in. Using the merged effective PM for profile entries is safe because those entries are
+        // already scoped to a profile — we are not mixing scopes.
+        Properties effectiveProps = mp.getProperties();
         Map<String, String> effectivePmVersions = new HashMap<>();
         if (mp.getPluginManagement() != null && mp.getPluginManagement().getPlugins() != null) {
             for (Plugin p : mp.getPluginManagement().getPlugins()) {
@@ -312,7 +318,7 @@ public final class MojoHelper {
                 && origBuild.getPluginManagement() != null
                 && origBuild.getPluginManagement().getPlugins() != null) {
             origBuild.getPluginManagement().getPlugins().stream()
-                    .map(p -> toPilotPluginResolved(p, null, effectivePmVersions))
+                    .map(p -> toPilotPluginResolvedFromProps(p, null, effectiveProps))
                     .forEach(result::add);
         }
         // Profile-scoped plugin management — active profiles only.
@@ -322,7 +328,7 @@ public final class MojoHelper {
                     && profile.getBuild().getPluginManagement() != null
                     && profile.getBuild().getPluginManagement().getPlugins() != null) {
                 profile.getBuild().getPluginManagement().getPlugins().stream()
-                        .map(p -> toPilotPluginWithProfile(p, profileId))
+                        .map(p -> toPilotPluginResolved(p, profileId, effectivePmVersions))
                         .forEach(result::add);
             }
         }
@@ -338,6 +344,23 @@ public final class MojoHelper {
         String version = plugin.getVersion();
         if (version != null && version.startsWith("${")) {
             String resolved = resolvedVersions.get(plugin.getGroupId() + ":" + plugin.getArtifactId());
+            if (resolved != null && !resolved.startsWith("${")) {
+                version = resolved;
+            }
+        }
+        List<PilotProject.Dep> deps = plugin.getDependencies() != null
+                ? plugin.getDependencies().stream().map(MojoHelper::toPilotDep).toList()
+                : List.of();
+        return new PilotProject.Plugin(
+                plugin.getGroupId(), plugin.getArtifactId(), version, deps, List.of(), profileId);
+    }
+
+    private static PilotProject.Plugin toPilotPluginResolvedFromProps(
+            Plugin plugin, String profileId, Properties effectiveProps) {
+        String version = plugin.getVersion();
+        if (version != null && version.startsWith("${") && version.endsWith("}")) {
+            String key = version.substring(2, version.length() - 1);
+            String resolved = effectiveProps.getProperty(key);
             if (resolved != null && !resolved.startsWith("${")) {
                 version = resolved;
             }

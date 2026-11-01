@@ -434,15 +434,17 @@ class MojoHelperTest {
      * literally.  {@code VersionComparator} cannot parse property references and treats
      * them as {@code 0.0.0}, causing spurious update suggestions.
      *
-     * <p>{@code extractManagedPlugins} resolves property expressions by looking up the
-     * same GA in the effective plugin management (which has already interpolated
-     * properties).  The resolved concrete version is used for comparison, while the raw
-     * property reference in the POM is left untouched for the domtrip editor.</p>
+     * <p>{@code extractManagedPlugins} resolves property expressions for root-level PM
+     * entries by looking up the property key in the effective project properties
+     * ({@code mp.getProperties()}). This avoids the contamination that would arise from
+     * using the effective plugin management ({@code mp.getPluginManagement()}), which
+     * merges active-profile PM entries and could supply a profile's version override for
+     * a plugin that shares the same GA. The resolved concrete version is used for
+     * comparison, while the raw property reference in the POM is left untouched for the
+     * domtrip editor.</p>
      *
-     * <p><b>Test-model limitation:</b> In a real Maven build, {@code getModel()} (effective)
-     * and {@code getOriginalModel()} are distinct objects.  Here we construct them separately
-     * so that the effective build contains the concrete version while the original retains
-     * the property expression.</p>
+     * <p><b>Test-model setup:</b> {@code mp.getModel().getProperties()} is populated with
+     * the resolved value to mirror what Maven's model-builder does during an actual build.</p>
      */
     @Test
     void extractManagedPlugins_propertyVersionIsResolvedFromEffectiveModel() {
@@ -474,6 +476,11 @@ class MojoHelperTest {
         mp.setVersion("1.0");
         mp.setBuild(effBuild); // effective model's build (getPluginManagement() reads this)
         mp.setOriginalModel(origModel); // original model retains property expression
+        // Supply the resolved value via effective project properties (mp.getProperties() →
+        // mp.getModel().getProperties()). This mirrors what Maven's model-builder does
+        // during the build: it interpolates ${compiler.version} and stores the concrete
+        // version in the effective model's properties (or in the effective PM entry).
+        mp.getModel().getProperties().setProperty("compiler.version", "3.11.0");
 
         PilotProject pp = MojoHelper.toPilotProject(mp, new IdentityHashMap<>());
 
